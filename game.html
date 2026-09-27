@@ -1,0 +1,4387 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>غزة: أطياف الرماد والصمود</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+    body {
+        display: flex; flex-direction: column; justify-content: center; align-items: center;
+        min-height: 100vh;
+        background: radial-gradient(circle at center, #2a2a2e 0%, #0d0d10 100%);
+        font-family: 'Segoe UI', Tahoma, sans-serif;
+        touch-action: manipulation; overflow: hidden; color: #e0e0e0; padding: 10px;
+    }
+    .game-wrapper { width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 10px; position: relative; }
+
+    .game-container {
+        position: relative; width: 100%;
+        box-shadow: 0 25px 50px rgba(0,0,0,0.9);
+        border-radius: 14px; overflow: hidden;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    canvas { display: block; width: 100%; height: auto; aspect-ratio: 16/9; touch-action: none; }
+
+    .story-panel {
+        background: rgba(15,15,20,0.9); border: 1px solid rgba(255,255,255,0.08);
+        padding: 12px 20px; border-radius: 10px; text-align: center;
+        font-size: 13px; line-height: 1.6; color: #ccc;
+        backdrop-filter: blur(8px); min-height: 55px;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .controls-panel { display: flex; justify-content: space-between; gap: 15px; }
+    .btn {
+        flex: 1; height: 55px;
+        background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+        border: 1px solid rgba(255,255,255,0.15); border-radius: 12px;
+        cursor: pointer; display: flex; justify-content: center; align-items: center;
+        transition: all 0.1s ease;
+    }
+    .btn:active, .btn.pressed {
+        transform: scale(0.96); background: rgba(212,175,55,0.2); border-color: #d4af37;
+    }
+    .btn svg { width: 28px; height: 28px; fill: #ccc; }
+
+    /* زر تبديل اللغة العائم */
+    .lang-switch-btn {
+        position: fixed;
+        top: 15px;
+        padding: 8px 16px;
+        background: rgba(15, 15, 20, 0.9);
+        border: 1px solid rgba(212, 175, 55, 0.5);
+        border-radius: 8px;
+        color: #d4af37;
+        font-size: 13px;
+        font-weight: bold;
+        cursor: pointer;
+        backdrop-filter: blur(8px);
+        z-index: 100;
+        transition: all 0.2s;
+        font-family: 'Segoe UI', Tahoma, sans-serif;
+    }
+    .lang-switch-btn:hover {
+        background: rgba(212, 175, 55, 0.15);
+        border-color: #d4af37;
+    }
+    .lang-switch-btn.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="game-wrapper">
+    <div class="game-container">
+        <canvas id="gameCanvas" width="960" height="540"></canvas>
+    </div>
+
+    <div class="story-panel" id="storyBox">
+        ...
+    </div>
+
+    <div class="controls-panel">
+        <button class="btn" id="btnBack" title="مشي للخلف">
+            <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        </button>
+        <button class="btn" id="btnForward" title="مشي للأمام">
+            <svg viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z"/></svg>
+        </button>
+    </div>
+</div>
+
+<button class="lang-switch-btn hidden" id="langSwitchBtn">English</button>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const storyBox = document.getElementById('storyBox');
+const W = canvas.width, H = canvas.height;
+const GROUND_Y = 430;
+const startTime = Date.now();
+
+// ===================== نظام اللغات (i18n) =====================
+let currentLang = 'ar';
+let languageSelected = false;
+
+const translations = {
+    ar: {
+        // شاشة اختيار اللغة
+        'lang.choose': 'اختر اللغة',
+        'lang.arabic': 'العربية',
+        'lang.english': 'English',
+        'lang.switch.to': 'English',
+        // العنوان
+        'title.main': 'غزة: أطياف الرماد والصمود',
+        'title.sub': 'الجزء الأول: أطياف',
+        // الواجهة
+        'ui.start': 'بدء الرحلة',
+        'ui.close': 'إغلاق',
+        'ui.next': 'التالي ←',
+        'ui.prev': '→ السابق',
+        'ui.page': 'صفحة',
+        'ui.of': 'من',
+        'ui.end': 'النهاية',
+        'ui.thanks': 'شكراً للعبك',
+        'ui.continue': 'يتبع...',
+        // القصة الافتتاحية
+        'story.intro': '«خطوات صامتة وسط الرماد.. اجمع شرارات الذكريات لإعادة إحياء الحكاية.»',
+        // الذكريات
+        'mem.1': '«دفتر مدرسة قديم بين صفوف الحجارة المحطمة.»',
+        'mem.2': '«مفتاح منزل قديم ما زال يعلق على جدار منهار.»',
+        'mem.3': '«دمية دب ممزقة تروي حكاية ببريق عينيها.»',
+        'mem.4': '«كتاب قصائد محترق الأطراف، لكن كلماته تنبض.»',
+        'mem.5': '«شجرة زيتون معمرة أثخنتها الجراح لكنها لم تسقط.»',
+        'mem.6': '«صورة عائلية قديمة صمدت فوق الرماد.»',
+        'mem.7': '«فنجان قهوة حجري قديم يحفظ رائحة الصباح.»',
+        'mem.8': '«علم صغير مصنوع من القماش الممزق يرفرف بعزة.»',
+        'mem.9': '«حجر أساس متين ينبض بالحياة تحت الأنقاض.»',
+        'mem.10': '«شمعة أمل لا تنطفئ مهما اشتدت عاصفة الرماد.»',
+        'mem.all': '«🌟 اكتمل عقد الصمود..»',
+        // البيت
+        'house.hint.find': 'ابحث عن القطع المبعثرة في الغرفة',
+        'house.hint.board': 'اقترب من اللوحة على الجدار',
+        'house.hint.key': 'التقط المفتاح',
+        'house.hint.door': 'اذهب للباب المغلق',
+        'house.got.piece': 'حصلت على جزء من الصورة',
+        'house.puzzle.done': '«انتهت الصورة.. سقط شيء من خلفها.»',
+        'house.key.taken': '«التقطت المفتاح الذهبي.. الآن افتح الباب المغلق.»',
+        'house.exited': '«فتحت الباب.. خرجت للطريق.»',
+        'house.completed': '«أكملت البيت الأول.. واصل البحث عن الذكريات.»',
+        'house.puzzle.hint': 'رتّب القطع حسب الصورة في ذاكرتك',
+        'house.puzzle.remaining': 'القطع المتبقية',
+        // رسالة البيت
+        'msg.house.title': 'رسالة من البيت',
+        'msg.house.1': 'في هذا البيت، كان يضحك طفل كل صباح...',
+        'msg.house.2': 'كان اسمه يوسف. عمره سبع سنوات.',
+        'msg.house.3': 'يحب الرسم، ويحلم أن يصبح طياراً.',
+        'msg.house.4': 'في يوم من الأيام، سمع صوت الطائرات...',
+        'msg.house.5': 'ركض ليحضر ورقته وقلبه، ليرسمها كعادته.',
+        'msg.house.6': 'لم يعد يوسف إلى البيت.',
+        'msg.house.7': 'بقيت ورقته... وبقيت الصورة... وبقيت ذكراه.',
+        // المدرسة
+        'school.hint.1': 'اقرأ أسماء الكراسات وابحث عن صاحب الرسمة',
+        'school.hint.2': 'انظر إلى التلميح...',
+        'school.hint.3': 'ابحث عن رسالة المعلمة',
+        'school.hint.4': 'اخرج من الباب على اليمين',
+        'school.notebook': '«كراسة',
+        'school.entered': '«صف مدرسي مهجور.. الفوضى تعمّ المكان.»',
+        'school.exited': '«خرجت من الصف.. أكملت المدرسة.»',
+        'school.completed': '«أكملت المدرسة.. واصل البحث.»',
+        'school.drawing.hint': '«رسمة يوسف.. ابحث عن رسالة المعلمة.»',
+        'school.drawing.title': 'رسمة من كراسة يوسف',
+        'school.drawing.sign': 'أنا يوسف',
+        // رسالة المعلمة
+        'msg.teacher.title': 'رسالة من المعلمة',
+        'msg.teacher.1': 'أكتب هذه الكلمات وأنا أنظر إلى مقاعد تلاميذي الفارغة...',
+        'msg.teacher.2': 'كان في صفّي خمسة عشر تلميذاً. كل واحد منهم حلمٌ صغير.',
+        'msg.teacher.3': 'يوسف... كان الأكثر تعلقاً بالسماء.',
+        'msg.teacher.4': 'كل يوم يرفع يده ليسألني: «متى نصبح طيارين يا معلّمتي؟»',
+        'msg.teacher.5': 'كان يرسم الطائرات على كراساته، ويحلم بعيداً.',
+        'msg.teacher.6': 'في يوم من الأيام، لم يأتِ يوسف إلى المدرسة.',
+        'msg.teacher.7': 'لم يأتِ محمد أيضاً. ولا سارة. ولا فاطمة.',
+        'msg.teacher.8': 'بقيت كراساتهم... وبقيت أحلامهم... وبقيت أنا.',
+        'msg.teacher.9': 'أعدك يا يوسف: سيأتي يوم، وسيرفع طفلٌ يده من جديد،',
+        'msg.teacher.10': 'ويسألني: «متى نصبح طيارين؟»',
+        'msg.teacher.11': 'وحينها... سأبتسم وأقول: قريباً.',
+        // المشفى
+        'hospital.entered': '«قسم الطوارئ.. الملفات ما زالت على الأرض.»',
+        'hospital.hint.find': 'ابحث في قسم الطوارئ عن الملفات',
+        'hospital.hint.hidden': 'ابحث عن الملفات المخفية',
+        'hospital.hint.remaining': 'متبقي',
+        'hospital.hospital.name': 'المشفى',
+        'hospital.sign': 'قسم الطوارئ',
+        'hospital.cert.hospital': 'مستشفى غزة — قسم الطوارئ',
+        'hospital.cert.title': 'شهادة وفاة',
+        'hospital.cert.name': 'الاسم:',
+        'hospital.cert.age': 'العمر:',
+        'hospital.cert.date': 'التاريخ:',
+        'hospital.cert.cause': 'سبب الوفاة:',
+        'hospital.cert.file': 'ملف رقم:',
+        'hospital.cert.seal': 'خاتم رسمي',
+        'hospital.cert.doctor': 'د. سامي عبدالله',
+        'hospital.cert.last': '...آخر ملف',
+        // أسماء الأطفال
+        'cert.1.name': 'محمد أحمد',
+        'cert.1.age': '8 سنوات',
+        'cert.1.cause': 'قصف — إصابات متعددة',
+        'cert.2.name': 'سارة محمود',
+        'cert.2.age': '6 سنوات',
+        'cert.2.cause': 'قصف — نزيف داخلي حاد',
+        'cert.3.name': 'عمر خالد',
+        'cert.3.age': '9 سنوات',
+        'cert.3.cause': 'قصف — حروق من الدرجة الثالثة',
+        'cert.4.name': 'ليان ياسر',
+        'cert.4.age': '5 سنوات',
+        'cert.4.cause': 'قصف — فشل تنفسي',
+        'cert.5.name': 'يوسف سمير',
+        'cert.5.age': '7 سنوات',
+        'cert.5.cause': 'قصف مباشر على المنزل',
+        // رسالة الأم
+        'msg.mother.title': 'رسالة من أم يوسف',
+        'msg.mother.p1.1': 'إلى ابني يوسف...',
+        'msg.mother.p1.2': '',
+        'msg.mother.p1.3': 'أكتب إليك هذه الكلمات، ولا أعرف إن كانت ستصل إليك.',
+        'msg.mother.p1.4': 'في كل صباح، أفتح الباب وأنتظر...',
+        'msg.mother.p1.5': 'في كل ليلة، أناديك قبل أن أنام.',
+        'msg.mother.p1.6': '',
+        'msg.mother.p1.7': 'قالوا إنك في المستشفى. قالوا إنهم يحاولون.',
+        'msg.mother.p1.8': 'لكنهم لم يقولوا إنك ستعود.',
+        'msg.mother.p1.9': '',
+        'msg.mother.p1.10': 'رأيت كراستك أمس... الرسمة الأخيرة.',
+        'msg.mother.p1.11': 'الطائرة الكبيرة، والشمس الصفراء، والطفل الذي يبتسم.',
+        'msg.mother.p1.12': 'لماذا لا تزال الطائرة في السماء يا يوسف؟',
+        'msg.mother.p2.1': 'لماذا لم تحميك؟',
+        'msg.mother.p2.2': '',
+        'msg.mother.p2.3': 'حلمك كان الطيران. حلمك كان السماء.',
+        'msg.mother.p2.4': 'وها أنت الآن... في مكانٍ لا يحتاج طائرة.',
+        'msg.mother.p2.5': '',
+        'msg.mother.p2.6': 'لا أستطيع أن أودّعك.',
+        'msg.mother.p2.7': 'لا أستطيع أن أقول: راحتك في الجنة.',
+        'msg.mother.p2.8': 'لأنك كنت جنتي.',
+        'msg.mother.p2.9': '',
+        'msg.mother.p2.10': 'لكن... سأحفظ رسمتك.',
+        'msg.mother.p2.11': 'سأحفظ صورتك، وسأكمل... من أجلك.',
+        'msg.mother.p2.12': 'أمك التي تحبك، والتي لن تنساك أبداً.',
+        // المشهد السينمائي
+        'ending.1': 'في غزة...',
+        'ending.2': 'في كل بيت... قصة.',
+        'ending.3': 'في كل طفل... حلم.',
+        'ending.4': 'وفي كل حلم... حكاية تُروى.',
+        'ending.memories': 'عدد الذكريات المُجمّعة:',
+        'ending.time': 'الوقت المستغرق:',
+        'ending.minutes': 'دقيقة'
+    },
+    en: {
+        'lang.choose': 'Choose Language',
+        'lang.arabic': 'العربية',
+        'lang.english': 'English',
+        'lang.switch.to': 'العربية',
+        'title.main': 'Gaza: Specters of Ash and Resilience',
+        'title.sub': 'Part One: Specters',
+        'ui.start': 'Start Journey',
+        'ui.close': 'Close',
+        'ui.next': 'Next →',
+        'ui.prev': '← Previous',
+        'ui.page': 'Page',
+        'ui.of': 'of',
+        'ui.end': 'The End',
+        'ui.thanks': 'Thank you for playing',
+        'ui.continue': 'To be continued...',
+        'story.intro': '"Silent steps through the ashes.. Gather the sparks of memory to revive the story."',
+        'mem.1': '"An old school notebook among the shattered stones."',
+        'mem.2': '"An old house key still hanging on a collapsed wall."',
+        'mem.3': '"A torn teddy bear telling a story through the glow of its eyes."',
+        'mem.4': '"A book of poems with burnt edges, yet its words still pulse."',
+        'mem.5': '"An ancient olive tree, wounded but never fallen."',
+        'mem.6': '"An old black-and-white family photo that survived the rubble."',
+        'mem.7': '"An old stone coffee cup still holding the morning\'s scent."',
+        'mem.8': '"A small flag made of torn cloth, waving with dignity."',
+        'mem.9': '"A solid foundation stone pulsing with life beneath the ruins."',
+        'mem.10': '"A candle of hope that never extinguishes, no matter how fierce the storm of ash."',
+        'mem.all': '"🌟 The bond of resilience is complete..."',
+        'house.hint.find': 'Search for the scattered pieces in the room',
+        'house.hint.board': 'Approach the board on the wall',
+        'house.hint.key': 'Pick up the key',
+        'house.hint.door': 'Go to the closed door',
+        'house.got.piece': 'You got a piece of the picture',
+        'house.puzzle.done': '"The picture is complete.. Something fell from behind it."',
+        'house.key.taken': '"You picked up the golden key.. Now open the closed door."',
+        'house.exited': '"You opened the door.. You went out to the road."',
+        'house.completed': '"You completed the first house.. Continue searching for memories."',
+        'house.puzzle.hint': 'Arrange the pieces according to the picture in your memory',
+        'house.puzzle.remaining': 'Remaining pieces',
+        'msg.house.title': 'A Message from the House',
+        'msg.house.1': 'In this house, a child laughed every morning...',
+        'msg.house.2': 'His name was Yousef. He was seven years old.',
+        'msg.house.3': 'He loved drawing, and dreamed of becoming a pilot.',
+        'msg.house.4': 'One day, he heard the sound of planes...',
+        'msg.house.5': 'He ran to get his paper and pencil, to draw as usual.',
+        'msg.house.6': 'Yousef never came back to the house.',
+        'msg.house.7': 'His paper remained... the picture remained... his memory remained.',
+        'school.hint.1': 'Read the names on the notebooks and find the one with the drawing',
+        'school.hint.2': 'Look at the hint...',
+        'school.hint.3': 'Search for the teacher\'s letter',
+        'school.hint.4': 'Exit through the door on the right',
+        'school.notebook': '"Notebook of',
+        'school.entered': '"An abandoned classroom.. Chaos fills the place."',
+        'school.exited': '"You left the classroom.. You completed the school."',
+        'school.completed': '"You completed the school.. Continue searching."',
+        'school.drawing.hint': '"Yousef\'s drawing.. Search for the teacher\'s letter."',
+        'school.drawing.title': 'A Drawing from Yousef\'s Notebook',
+        'school.drawing.sign': 'I am Yousef',
+        'msg.teacher.title': 'A Message from the Teacher',
+        'msg.teacher.1': 'I write these words as I look at my students\' empty seats...',
+        'msg.teacher.2': 'I had fifteen students. Each one was a small dream.',
+        'msg.teacher.3': 'Yousef... was the most attached to the sky.',
+        'msg.teacher.4': 'Every day he raised his hand to ask: "When will we become pilots, teacher?"',
+        'msg.teacher.5': 'He drew planes in his notebooks, and dreamed far away.',
+        'msg.teacher.6': 'One day, Yousef did not come to school.',
+        'msg.teacher.7': 'Neither did Mohammad. Nor Sarah. Nor Fatima.',
+        'msg.teacher.8': 'Their notebooks remained... their dreams remained... and I remained.',
+        'msg.teacher.9': 'I promise you, Yousef: a day will come when a child raises his hand again,',
+        'msg.teacher.10': 'and asks me: "When will we become pilots?"',
+        'msg.teacher.11': 'And then... I will smile and say: Soon.',
+        'hospital.entered': '"The emergency room.. The files are still on the ground."',
+        'hospital.hint.find': 'Search the emergency room for the files',
+        'hospital.hint.hidden': 'Search for the hidden files',
+        'hospital.hint.remaining': 'Remaining',
+        'hospital.hospital.name': 'Hospital',
+        'hospital.sign': 'Emergency Room',
+        'hospital.cert.hospital': 'Gaza Hospital — Emergency Room',
+        'hospital.cert.title': 'Death Certificate',
+        'hospital.cert.name': 'Name:',
+        'hospital.cert.age': 'Age:',
+        'hospital.cert.date': 'Date:',
+        'hospital.cert.cause': 'Cause of death:',
+        'hospital.cert.file': 'File No:',
+        'hospital.cert.seal': 'Official Seal',
+        'hospital.cert.doctor': 'Dr. Sami Abdullah',
+        'hospital.cert.last': '...Last file',
+        'cert.1.name': 'Mohammad Ahmad',
+        'cert.1.age': '8 years',
+        'cert.1.cause': 'Bombing — Multiple injuries',
+        'cert.2.name': 'Sarah Mahmoud',
+        'cert.2.age': '6 years',
+        'cert.2.cause': 'Bombing — Severe internal bleeding',
+        'cert.3.name': 'Omar Khaled',
+        'cert.3.age': '9 years',
+        'cert.3.cause': 'Bombing — Third-degree burns',
+        'cert.4.name': 'Layan Yasser',
+        'cert.4.age': '5 years',
+        'cert.4.cause': 'Bombing — Respiratory failure',
+        'cert.5.name': 'Yousef Samir',
+        'cert.5.age': '7 years',
+        'cert.5.cause': 'Direct bombing of the house',
+        'msg.mother.title': 'A Message from Yousef\'s Mother',
+        'msg.mother.p1.1': 'To my son Yousef...',
+        'msg.mother.p1.2': '',
+        'msg.mother.p1.3': 'I write these words to you, not knowing if they will reach you.',
+        'msg.mother.p1.4': 'Every morning, I open the door and wait...',
+        'msg.mother.p1.5': 'Every night, I call your name before I sleep.',
+        'msg.mother.p1.6': '',
+        'msg.mother.p1.7': 'They said you were in the hospital. They said they were trying.',
+        'msg.mother.p1.8': 'But they didn\'t say you would come back.',
+        'msg.mother.p1.9': '',
+        'msg.mother.p1.10': 'I saw your notebook yesterday... the last drawing.',
+        'msg.mother.p1.11': 'The big plane, the yellow sun, and the smiling child.',
+        'msg.mother.p1.12': 'Why is the plane still in the sky, Yousef?',
+        'msg.mother.p2.1': 'Why didn\'t it protect you?',
+        'msg.mother.p2.2': '',
+        'msg.mother.p2.3': 'Your dream was to fly. Your dream was the sky.',
+        'msg.mother.p2.4': 'And now you are... in a place that does not need a plane.',
+        'msg.mother.p2.5': '',
+        'msg.mother.p2.6': 'I cannot say goodbye to you.',
+        'msg.mother.p2.7': 'I cannot say: May you rest in peace.',
+        'msg.mother.p2.8': 'Because you were my peace.',
+        'msg.mother.p2.9': '',
+        'msg.mother.p2.10': 'But... I will keep your drawing.',
+        'msg.mother.p2.11': 'I will keep your picture, and I will continue... for you.',
+        'msg.mother.p2.12': 'Your mother who loves you, and will never forget you.',
+        'ending.1': 'In Gaza...',
+        'ending.2': 'In every house... a story.',
+        'ending.3': 'In every child... a dream.',
+        'ending.4': 'And in every dream... a tale to be told.',
+        'ending.memories': 'Memories collected:',
+        'ending.time': 'Time spent:',
+        'ending.minutes': 'minutes'
+    }
+};
+
+
+function t(key) {
+    const dict = translations[currentLang];
+    if (dict && Object.prototype.hasOwnProperty.call(dict, key)) {
+        return dict[key];
+    }
+    return key;
+}
+function applyLanguage(lang) {
+    currentLang = lang;
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    
+    // تحديث زر تبديل اللغة
+    const switchBtn = document.getElementById('langSwitchBtn');
+    switchBtn.textContent = t('lang.switch.to');
+    
+    // تحديث نص القصة الافتتاحي
+    if (!languageSelected) {
+        storyBox.innerText = t('story.intro');
+    }
+    languageSelected = true;
+    
+    // إخفاء/إظهار زر التبديل حسب المشهد
+    updateLangSwitchVisibility();
+}
+
+function toggleLanguage() {
+    applyLanguage(currentLang === 'ar' ? 'en' : 'ar');
+}
+
+function updateLangSwitchVisibility() {
+    const btn = document.getElementById('langSwitchBtn');
+    if (currentScene === 'languageselection' || currentScene === 'ending') {
+        btn.classList.add('hidden');
+    } else {
+        btn.classList.remove('hidden');
+    }
+}
+
+// ===================== إدارة المشهد =====================
+let currentScene = 'languageselection';
+let transitionAlpha = 0;
+let transitionTarget = 0;
+let pendingScene = null;
+let transitionCallback = null;
+let blackScreen = 0;
+
+// شاشة اختيار اللغة
+let langScrollX = 0;
+let langScrollTarget = 0;
+let isDraggingLang = false;
+let langDragStartX = 0;
+let langScrollStartX = 0;
+
+function startTransition(targetScene, callback) {
+    pendingScene = targetScene;
+    transitionTarget = 1;
+    transitionCallback = callback || null;
+}
+
+function updateTransition() {
+    transitionAlpha += (transitionTarget - transitionAlpha) * 0.08;
+    if (transitionTarget === 1 && transitionAlpha > 0.98) {
+        currentScene = pendingScene;
+        if (transitionCallback) { transitionCallback(); transitionCallback = null; }
+        transitionTarget = 0;
+        updateLangSwitchVisibility();
+    }
+    if (transitionTarget === 0 && transitionAlpha < 0.02) transitionAlpha = 0;
+}
+
+// ===================== الصوت =====================
+let audioCtx = null;
+let isAudioActive = false;
+let soundTimeout = null;
+let activeNodes = [];
+let roadSoundsPaused = false;
+let noiseBuffer = null;
+
+function getNoiseBuffer() {
+    if (noiseBuffer || !audioCtx) return noiseBuffer;
+    const length = audioCtx.sampleRate * 2;
+    const buf = audioCtx.createBuffer(1, length, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    noiseBuffer = buf;
+    return noiseBuffer;
+}
+
+function startAudio() {
+    if (isAudioActive) return;
+    try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        isAudioActive = true;
+        scheduleNextSound();
+    } catch(e) {}
+}
+
+function stopAllAudio() {
+    isAudioActive = false;
+    if (soundTimeout) { clearTimeout(soundTimeout); soundTimeout = null; }
+    activeNodes.forEach(node => { try { node.stop(); } catch(e) {} });
+    activeNodes = [];
+    if (audioCtx && audioCtx.state === 'running') { try { audioCtx.suspend(); } catch(e) {} }
+}
+
+function playRustle() {
+    if (!audioCtx || !isAudioActive || roadSoundsPaused) return;
+    try {
+        const now = audioCtx.currentTime;
+        const duration = 1.8 + Math.random() * 0.8;
+        const source = audioCtx.createBufferSource();
+        source.buffer = getNoiseBuffer();
+        source.loop = true;
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(700, now);
+        filter.frequency.linearRampToValueAtTime(1200, now + duration * 0.5);
+        filter.frequency.linearRampToValueAtTime(500, now + duration);
+        filter.Q.value = 0.8;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 1.5;
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.035, now + duration * 0.3);
+        gain.gain.exponentialRampToValueAtTime(0.022, now + duration * 0.7);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+        source.connect(filter); filter.connect(bp); bp.connect(gain); gain.connect(audioCtx.destination);
+        source.start(now); source.stop(now + duration);
+        activeNodes.push(source);
+        setTimeout(() => { activeNodes = activeNodes.filter(n => n !== source); }, (duration + 0.5) * 1000);
+    } catch(e) {}
+}
+
+function playDistantWhistle() {
+    if (!audioCtx || !isAudioActive || roadSoundsPaused) return;
+    try {
+        const now = audioCtx.currentTime;
+        const duration = 2.0 + Math.random() * 0.8;
+        const baseFreqs = [392, 440, 494, 523, 587];
+        const baseFreq = baseFreqs[Math.floor(Math.random() * baseFreqs.length)];
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(baseFreq, now);
+        osc.frequency.linearRampToValueAtTime(baseFreq * 1.05, now + duration * 0.4);
+        osc.frequency.linearRampToValueAtTime(baseFreq * 0.92, now + duration);
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass'; filter.frequency.value = 2000; filter.Q.value = 0.5;
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.028, now + duration * 0.4);
+        gain.gain.exponentialRampToValueAtTime(0.018, now + duration * 0.75);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+        const delay = audioCtx.createDelay(); delay.delayTime.value = 0.28;
+        const feedback = audioCtx.createGain(); feedback.gain.value = 0.25;
+        const delayGain = audioCtx.createGain(); delayGain.gain.value = 0.3;
+        osc.connect(filter); filter.connect(gain);
+        gain.connect(audioCtx.destination);
+        gain.connect(delay); delay.connect(feedback); feedback.connect(delay);
+        delay.connect(delayGain); delayGain.connect(audioCtx.destination);
+        osc.start(now); osc.stop(now + duration);
+        activeNodes.push(osc);
+        setTimeout(() => { activeNodes = activeNodes.filter(n => n !== osc); }, (duration + 1.5) * 1000);
+    } catch(e) {}
+}
+
+function scheduleNextSound() {
+    if (!isAudioActive) return;
+    if (!roadSoundsPaused) {
+        if (Math.random() < 0.5) playRustle(); else playDistantWhistle();
+    }
+    soundTimeout = setTimeout(scheduleNextSound, 12000 + Math.random() * 13000);
+}
+
+function playPip() {
+    if (!audioCtx || !isAudioActive) return;
+    try {
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, now);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.025, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now); osc.stop(now + 0.2);
+        activeNodes.push(osc);
+        setTimeout(() => { activeNodes = activeNodes.filter(n => n !== osc); }, 300);
+    } catch(e) {}
+}
+
+function playSnap() {
+    if (!audioCtx || !isAudioActive) return;
+    try {
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(660, now);
+        osc.frequency.exponentialRampToValueAtTime(990, now + 0.1);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.03, now + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now); osc.stop(now + 0.4);
+        activeNodes.push(osc);
+        setTimeout(() => { activeNodes = activeNodes.filter(n => n !== osc); }, 500);
+    } catch(e) {}
+}
+
+function playReject() {
+    if (!audioCtx || !isAudioActive) return;
+    try {
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(220, now);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.02, now + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now); osc.stop(now + 0.3);
+        activeNodes.push(osc);
+        setTimeout(() => { activeNodes = activeNodes.filter(n => n !== osc); }, 400);
+    } catch(e) {}
+}
+
+function playKeySound() {
+    if (!audioCtx || !isAudioActive) return;
+    try {
+        const now = audioCtx.currentTime;
+        [1046.50, 1318.51, 1567.98].forEach((freq, i) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const tt = now + i * 0.08;
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, tt);
+            gain.gain.setValueAtTime(0.0001, tt);
+            gain.gain.exponentialRampToValueAtTime(0.028, tt + 0.04);
+            gain.gain.exponentialRampToValueAtTime(0.0001, tt + 0.6);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(tt); osc.stop(tt + 0.7);
+            activeNodes.push(osc);
+            setTimeout(() => { activeNodes = activeNodes.filter(n => n !== osc); }, 900);
+        });
+    } catch(e) {}
+}
+
+function playThunder() {
+    if (!audioCtx || !isAudioActive || roadSoundsPaused) return;
+    try {
+        const now = audioCtx.currentTime;
+        const duration = 1.5 + Math.random() * 1.0;
+        const source = audioCtx.createBufferSource();
+        source.buffer = getNoiseBuffer();
+        source.loop = true;
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(150, now);
+        filter.frequency.linearRampToValueAtTime(80, now + duration);
+        filter.Q.value = 0.5;
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.05, now + 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.02, now + duration * 0.4);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+        source.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+        source.start(now); source.stop(now + duration);
+        activeNodes.push(source);
+        setTimeout(() => { activeNodes = activeNodes.filter(n => n !== source); }, (duration + 0.5) * 1000);
+    } catch(e) {}
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopAllAudio(); else startAudio();
+});
+window.addEventListener('blur', stopAllAudio);
+window.addEventListener('pagehide', stopAllAudio);
+window.addEventListener('beforeunload', stopAllAudio);
+
+// ===================== حالة اللعبة =====================
+let memoriesCollected = 0;
+let worldX = 0;
+let moveForward = false, moveBack = false;
+
+const HOUSE_WORLD_X = 1500;
+const HOUSE_WIDTH = 220;
+const HOUSE_HEIGHT = 160;
+
+let houseCompleted = false;
+let hasKey = false;
+
+const ROOM_WIDTH = 1500;
+const ROOM_GROUND_Y = 460;
+let roomX = 0;
+
+const SCHOOL_WORLD_X = 4000;
+const SCHOOL_WIDTH = 400;
+const SCHOOL_HEIGHT = 200;
+const SCHOOL_DOORS_COUNT = 5;
+const SCHOOL_OPEN_DOOR = 2;
+
+const CLASSROOM_WIDTH = 1500;
+const CLASSROOM_GROUND_Y = 460;
+let classroomX = 0;
+
+let schoolEnteredFlag = false;
+let schoolCompleted = false;
+let classroomState = 'idle';
+let childDrawingOpen = false;
+let teacherLetterOpen = false;
+
+const TOTAL_NOTEBOOKS = 15;
+let notebooks = [];
+let yusufNotebookIndex = 0;
+let yusufNotebookFound = false;
+let teacherLetterVisible = false;
+
+const HOSPITAL_WORLD_X = 6000;
+const HOSPITAL_WIDTH = 350;
+const HOSPITAL_HEIGHT = 280;
+
+const EMERGENCY_WIDTH = 1500;
+const EMERGENCY_GROUND_Y = 460;
+let emergencyX = 0;
+
+let hospitalEnteredFlag = false;
+let hospitalCompleted = false;
+let filesRead = 0;
+let currentFileOpen = false;
+let currentFileIndex = 0;
+let motherLetterOpen = false;
+let motherLetterPage = 0;
+let endingStarted = false;
+let endingTimer = 0;
+let gameFinished = false;
+let endingButtonRect = { x: 0, y: 0, w: 0, h: 0 };
+
+let hiddenFiles = [];
+let collectedFiles = [];
+
+function initHiddenFiles() {
+    const candidateSpots = [
+        { x: 200, y: EMERGENCY_GROUND_Y - 8 },
+        { x: 260, y: EMERGENCY_GROUND_Y - 12 },
+        { x: 420, y: EMERGENCY_GROUND_Y - 8 },
+        { x: 480, y: EMERGENCY_GROUND_Y - 12 },
+        { x: 620, y: EMERGENCY_GROUND_Y - 8 },
+        { x: 700, y: EMERGENCY_GROUND_Y - 15 },
+        { x: 800, y: EMERGENCY_GROUND_Y - 8 },
+        { x: 900, y: EMERGENCY_GROUND_Y - 12 },
+        { x: 1050, y: EMERGENCY_GROUND_Y - 10 },
+        { x: 1200, y: EMERGENCY_GROUND_Y - 8 },
+        { x: 1300, y: EMERGENCY_GROUND_Y - 12 }
+    ];
+    const shuffled = candidateSpots.slice().sort(() => Math.random() - 0.5);
+    hiddenFiles = [];
+    for (let i = 0; i < 5; i++) {
+        hiddenFiles.push({
+            id: i,
+            x: shuffled[i].x,
+            y: shuffled[i].y,
+            collected: false,
+            bobPhase: Math.random() * Math.PI * 2
+        });
+    }
+    collectedFiles = [false, false, false, false, false];
+}
+initHiddenFiles();
+
+const ARABIC_NAMES = [
+    'محمد', 'أحمد', 'يوسف', 'علي', 'سارة',
+    'فاطمة', 'ليلى', 'خالد', 'عمر', 'مريم',
+    'زينب', 'حسن', 'نور', 'ريم', 'كرم'
+];
+
+function initNotebooks() {
+    notebooks = [];
+    const positions = [
+        { x: 250, y: CLASSROOM_GROUND_Y - 12 },
+        { x: 380, y: CLASSROOM_GROUND_Y - 30 },
+        { x: 500, y: CLASSROOM_GROUND_Y - 12 },
+        { x: 640, y: CLASSROOM_GROUND_Y - 55 },
+        { x: 780, y: CLASSROOM_GROUND_Y - 12 },
+        { x: 920, y: CLASSROOM_GROUND_Y - 40 },
+        { x: 1050, y: CLASSROOM_GROUND_Y - 12 },
+        { x: 1180, y: CLASSROOM_GROUND_Y - 25 },
+        { x: 320, y: CLASSROOM_GROUND_Y - 70 },
+        { x: 550, y: CLASSROOM_GROUND_Y - 80 },
+        { x: 850, y: CLASSROOM_GROUND_Y - 70 },
+        { x: 1000, y: CLASSROOM_GROUND_Y - 60 },
+        { x: 420, y: CLASSROOM_GROUND_Y - 100 },
+        { x: 700, y: CLASSROOM_GROUND_Y - 95 },
+        { x: 950, y: CLASSROOM_GROUND_Y - 110 }
+    ];
+    yusufNotebookIndex = Math.floor(Math.random() * TOTAL_NOTEBOOKS);
+    for (let i = 0; i < TOTAL_NOTEBOOKS; i++) {
+        const isYusuf = (i === yusufNotebookIndex);
+        let name = isYusuf ? 'يوسف' : ARABIC_NAMES[i % ARABIC_NAMES.length];
+        if (!isYusuf && name === 'يوسف') name = 'سالم';
+        notebooks.push({
+            id: i,
+            name: name,
+            isYusuf: isYusuf,
+            x: positions[i].x,
+            y: positions[i].y,
+            touched: false,
+            burntAmount: 0.3 + Math.random() * 0.4
+        });
+    }
+}
+initNotebooks();
+
+const player = {
+    x: 480, groundY: GROUND_Y, vx: 0, maxSpeed: 1.6,
+    acceleration: 0.05, friction: 0.86, isMoving: false,
+    direction: 1, walkCycle: 0, blinkTimer: 0, nextBlinkTime: 160,
+    isBlinking: false, breathTime: 0, headTilt: 0.08,
+    roomGroundY: ROOM_GROUND_Y
+};
+
+const memories = [
+    { x: 800, y: 400, collected: false, key: 'mem.1' },
+    { x: 2600, y: 390, collected: false, key: 'mem.2' },
+    { x: 3400, y: 400, collected: false, key: 'mem.3' },
+    { x: 4400, y: 390, collected: false, key: 'mem.4' },
+    { x: 5400, y: 400, collected: false, key: 'mem.5' },
+    { x: 6400, y: 390, collected: false, key: 'mem.6' },
+    { x: 7400, y: 400, collected: false, key: 'mem.7' },
+    { x: 8400, y: 390, collected: false, key: 'mem.8' },
+    { x: 9400, y: 400, collected: false, key: 'mem.9' },
+    { x: 10600, y: 380, collected: false, key: 'mem.10' }
+];
+
+const COLS = 4, ROWS = 3, TOTAL_PIECES = COLS * ROWS;
+const PIC_W = 240, PIC_H = 180;
+const PIECE_W = PIC_W / COLS, PIECE_H = PIC_H / ROWS;
+
+const BOARD_ROOM_X = 750;
+const BOARD_ROOM_Y = 130;
+
+let pieces = [];
+let piecesCollected = 0;
+let puzzleSolved = false;
+let keyDropped = false;
+let keyPosition = { x: 0, y: 0, collected: false, vy: 0 };
+let messageOpen = false;
+
+function initPieces() {
+    const positions = [
+        { x: 100, y: ROOM_GROUND_Y - 15 },
+        { x: 320, y: ROOM_GROUND_Y - 15 },
+        { x: 500, y: ROOM_GROUND_Y - 30 },
+        { x: 620, y: ROOM_GROUND_Y - 15 },
+        { x: 850, y: ROOM_GROUND_Y - 40 },
+        { x: 920, y: ROOM_GROUND_Y - 25 },
+        { x: 1050, y: ROOM_GROUND_Y - 15 },
+        { x: 1150, y: ROOM_GROUND_Y - 30 },
+        { x: 1250, y: ROOM_GROUND_Y - 15 },
+        { x: 350, y: ROOM_GROUND_Y - 60 },
+        { x: 700, y: ROOM_GROUND_Y - 15 },
+        { x: 1100, y: ROOM_GROUND_Y - 55 }
+    ];
+    pieces = [];
+    for (let i = 0; i < TOTAL_PIECES; i++) {
+        pieces.push({
+            id: i,
+            col: i % COLS,
+            row: Math.floor(i / COLS),
+            roomX: positions[i].x,
+            roomY: positions[i].y,
+            collected: false,
+            placed: false,
+            flipped: false,
+            flipTimer: 0,
+            stackX: 0,
+            stackY: 0
+        });
+    }
+}
+initPieces();
+
+// ===================== رسم الصورة العائلية =====================
+function drawFamilyPicture(targetCtx, x, y, w, h, alpha) {
+    targetCtx.save();
+    targetCtx.globalAlpha = alpha;
+    targetCtx.translate(x, y);
+    targetCtx.scale(w / 400, h / 300);
+
+    const skyGrad = targetCtx.createLinearGradient(0, 0, 0, 220);
+    skyGrad.addColorStop(0, '#7a7270');
+    skyGrad.addColorStop(0.5, '#9a8a80');
+    skyGrad.addColorStop(1, '#b0a090');
+    targetCtx.fillStyle = skyGrad;
+    targetCtx.fillRect(0, 0, 400, 220);
+
+    targetCtx.fillStyle = 'rgba(70, 62, 58, 0.45)';
+    targetCtx.beginPath();
+    targetCtx.ellipse(60, 50, 55, 22, 0, 0, Math.PI * 2);
+    targetCtx.ellipse(320, 65, 48, 20, 0, 0, Math.PI * 2);
+    targetCtx.ellipse(200, 40, 40, 15, 0, 0, Math.PI * 2);
+    targetCtx.fill();
+
+    targetCtx.fillStyle = '#7a6a54';
+    targetCtx.fillRect(0, 220, 400, 80);
+    targetCtx.strokeStyle = 'rgba(45, 35, 25, 0.45)';
+    targetCtx.lineWidth = 1;
+    targetCtx.beginPath();
+    targetCtx.moveTo(50, 240); targetCtx.lineTo(75, 258); targetCtx.lineTo(65, 280);
+    targetCtx.moveTo(300, 245); targetCtx.lineTo(285, 265); targetCtx.lineTo(315, 285);
+    targetCtx.moveTo(180, 250); targetCtx.lineTo(200, 265);
+    targetCtx.stroke();
+
+    targetCtx.fillStyle = '#8a7a62';
+    targetCtx.fillRect(280, 145, 90, 75);
+    targetCtx.fillStyle = '#5a3a1a';
+    targetCtx.beginPath();
+    targetCtx.moveTo(265, 145);
+    targetCtx.lineTo(295, 125);
+    targetCtx.lineTo(320, 118);
+    targetCtx.lineTo(340, 132);
+    targetCtx.lineTo(375, 130);
+    targetCtx.lineTo(380, 145);
+    targetCtx.closePath();
+    targetCtx.fill();
+    targetCtx.fillStyle = '#1a1a1a';
+    targetCtx.beginPath();
+    targetCtx.moveTo(305, 175);
+    targetCtx.lineTo(330, 178);
+    targetCtx.lineTo(325, 205);
+    targetCtx.lineTo(300, 200);
+    targetCtx.closePath();
+    targetCtx.fill();
+    targetCtx.fillStyle = '#3a2a1a';
+    targetCtx.fillRect(315, 195, 15, 25);
+    targetCtx.strokeStyle = '#0a0a0a';
+    targetCtx.lineWidth = 1;
+    targetCtx.beginPath();
+    targetCtx.moveTo(315, 195); targetCtx.lineTo(330, 220);
+    targetCtx.stroke();
+    targetCtx.fillStyle = '#2a2a3a';
+    targetCtx.fillRect(345, 160, 15, 15);
+    targetCtx.strokeStyle = '#1a1a2a';
+    targetCtx.beginPath();
+    targetCtx.moveTo(345, 160); targetCtx.lineTo(360, 175);
+    targetCtx.moveTo(360, 160); targetCtx.lineTo(345, 175);
+    targetCtx.stroke();
+    targetCtx.strokeStyle = 'rgba(50, 40, 30, 0.5)';
+    targetCtx.lineWidth = 1;
+    targetCtx.beginPath();
+    targetCtx.moveTo(285, 160); targetCtx.lineTo(300, 185);
+    targetCtx.moveTo(290, 190); targetCtx.lineTo(300, 220);
+    targetCtx.stroke();
+
+    targetCtx.strokeStyle = '#1a1008';
+    targetCtx.lineCap = 'round';
+    targetCtx.lineWidth = 4;
+    targetCtx.beginPath();
+    targetCtx.moveTo(90, 220);
+    targetCtx.lineTo(94, 170);
+    targetCtx.stroke();
+    targetCtx.lineWidth = 2.5;
+    targetCtx.beginPath();
+    targetCtx.moveTo(93, 190); targetCtx.lineTo(75, 160);
+    targetCtx.moveTo(94, 180); targetCtx.lineTo(112, 155);
+    targetCtx.moveTo(94, 172); targetCtx.lineTo(85, 145);
+    targetCtx.stroke();
+
+    targetCtx.fillStyle = '#8a8078';
+    targetCtx.beginPath();
+    targetCtx.arc(50, 228, 5, 0, Math.PI * 2);
+    targetCtx.arc(65, 232, 4, 0, Math.PI * 2);
+    targetCtx.arc(240, 231, 6, 0, Math.PI * 2);
+    targetCtx.arc(255, 233, 3, 0, Math.PI * 2);
+    targetCtx.arc(370, 228, 4, 0, Math.PI * 2);
+    targetCtx.fill();
+
+    targetCtx.strokeStyle = '#3a2a1a';
+    targetCtx.lineWidth = 1.5;
+    targetCtx.beginPath();
+    targetCtx.moveTo(160, 235); targetCtx.lineTo(180, 228);
+    targetCtx.moveTo(170, 240); targetCtx.lineTo(192, 234);
+    targetCtx.stroke();
+
+    targetCtx.strokeStyle = 'rgba(80, 60, 40, 0.18)';
+    targetCtx.lineWidth = 1;
+    targetCtx.beginPath();
+    targetCtx.moveTo(200, 0); targetCtx.lineTo(200, 300);
+    targetCtx.moveTo(0, 150); targetCtx.lineTo(400, 150);
+    targetCtx.stroke();
+
+    targetCtx.fillStyle = '#3a3a4a';
+    targetCtx.fillRect(130, 190, 40, 60);
+    targetCtx.fillStyle = '#d0b090';
+    targetCtx.beginPath();
+    targetCtx.arc(150, 175, 18, 0, Math.PI * 2);
+    targetCtx.fill();
+    targetCtx.fillStyle = '#3a2a1a';
+    targetCtx.beginPath();
+    targetCtx.arc(150, 168, 18, Math.PI, Math.PI * 2);
+    targetCtx.fill();
+
+    targetCtx.fillStyle = '#7a4a5a';
+    targetCtx.beginPath();
+    targetCtx.moveTo(185, 250);
+    targetCtx.lineTo(195, 190);
+    targetCtx.lineTo(235, 190);
+    targetCtx.lineTo(245, 250);
+    targetCtx.closePath();
+    targetCtx.fill();
+    targetCtx.fillStyle = '#e0c0a0';
+    targetCtx.beginPath();
+    targetCtx.arc(215, 175, 17, 0, Math.PI * 2);
+    targetCtx.fill();
+    targetCtx.fillStyle = '#3a1a1a';
+    targetCtx.beginPath();
+    targetCtx.arc(215, 168, 18, Math.PI, Math.PI * 2);
+    targetCtx.fill();
+    targetCtx.fillRect(197, 168, 5, 25);
+    targetCtx.fillRect(228, 168, 5, 25);
+
+    targetCtx.fillStyle = '#5a7a8a';
+    targetCtx.fillRect(255, 210, 26, 40);
+    targetCtx.fillStyle = '#f0d0b0';
+    targetCtx.beginPath();
+    targetCtx.arc(268, 195, 13, 0, Math.PI * 2);
+    targetCtx.fill();
+    targetCtx.fillStyle = '#4a2a1a';
+    targetCtx.beginPath();
+    targetCtx.arc(268, 188, 13, Math.PI, Math.PI * 2);
+    targetCtx.fill();
+    targetCtx.strokeStyle = '#5a2a1a';
+    targetCtx.lineWidth = 1.5;
+    targetCtx.beginPath();
+    targetCtx.arc(268, 198, 4, 0.2, Math.PI - 0.2);
+    targetCtx.stroke();
+
+    targetCtx.strokeStyle = '#4a3a2a';
+    targetCtx.lineWidth = 6;
+    targetCtx.strokeRect(3, 3, 394, 294);
+
+    targetCtx.restore();
+}
+  function drawPicturePiece(targetCtx, x, y, w, h, col, row, alpha) {
+    targetCtx.save();
+    targetCtx.globalAlpha = alpha;
+    targetCtx.beginPath();
+    targetCtx.rect(x, y, w, h);
+    targetCtx.clip();
+    const fullX = x - col * w;
+    const fullY = y - row * h;
+    const fullW = w * COLS;
+    const fullH = h * ROWS;
+    drawFamilyPicture(targetCtx, fullX, fullY, fullW, fullH, 1);
+    targetCtx.restore();
+}
+
+// ===================== رسمة يوسف الطفولية =====================
+function drawChildDrawing(cx, cy, w, h, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    ctx.fillStyle = '#e8e0c8';
+    ctx.fillRect(cx - w/2, cy - h/2, w, h);
+    ctx.strokeStyle = '#a89878';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - w/2, cy - h/2, w, h);
+
+    ctx.fillStyle = 'rgba(60, 30, 10, 0.35)';
+    ctx.beginPath();
+    ctx.moveTo(cx - w/2, cy + h/2);
+    ctx.lineTo(cx - w/2 + 30, cy + h/2 - 8);
+    ctx.lineTo(cx - w/2 + 60, cy + h/2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#f0c040';
+    ctx.beginPath();
+    ctx.arc(cx - w/2 + 60, cy - h/2 + 60, 30, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#f0c040';
+    ctx.lineWidth = 3;
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+        ctx.beginPath();
+        ctx.moveTo(cx - w/2 + 60 + Math.cos(a) * 35, cy - h/2 + 60 + Math.sin(a) * 35);
+        ctx.lineTo(cx - w/2 + 60 + Math.cos(a) * 48, cy - h/2 + 60 + Math.sin(a) * 48);
+        ctx.stroke();
+    }
+
+    ctx.strokeStyle = '#4a6a8a';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx + 40, cy - h/2 + 80);
+    ctx.lineTo(cx + 130, cy - h/2 + 80);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 60, cy - h/2 + 80); ctx.lineTo(cx + 55, cy - h/2 + 60);
+    ctx.moveTo(cx + 60, cy - h/2 + 80); ctx.lineTo(cx + 55, cy - h/2 + 100);
+    ctx.moveTo(cx + 110, cy - h/2 + 80); ctx.lineTo(cx + 115, cy - h/2 + 65);
+    ctx.moveTo(cx + 110, cy - h/2 + 80); ctx.lineTo(cx + 115, cy - h/2 + 95);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 40, cy - h/2 + 80); ctx.lineTo(cx + 25, cy - h/2 + 65);
+    ctx.moveTo(cx + 40, cy - h/2 + 80); ctx.lineTo(cx + 25, cy - h/2 + 95);
+    ctx.stroke();
+    ctx.fillStyle = '#4a6a8a';
+    ctx.beginPath();
+    ctx.arc(cx + 75, cy - h/2 + 78, 4, 0, Math.PI * 2);
+    ctx.arc(cx + 90, cy - h/2 + 78, 4, 0, Math.PI * 2);
+    ctx.arc(cx + 105, cy - h/2 + 78, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#6a8a4a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - w/2 + 20, cy + h/2 - 80);
+    ctx.lineTo(cx + w/2 - 20, cy + h/2 - 80);
+    ctx.stroke();
+    for (let i = 0; i < 8; i++) {
+        const gx = cx - w/2 + 40 + i * 40;
+        ctx.beginPath();
+        ctx.moveTo(gx, cy + h/2 - 80);
+        ctx.lineTo(gx + 5, cy + h/2 - 95);
+        ctx.stroke();
+    }
+
+    const childX = cx - 30;
+    const childBaseY = cy + h/2 - 80;
+    ctx.fillStyle = '#f0d0b0';
+    ctx.beginPath();
+    ctx.arc(childX, childBaseY - 75, 20, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#3a2a1a';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#3a2a1a';
+    ctx.beginPath();
+    ctx.arc(childX - 7, childBaseY - 78, 2.5, 0, Math.PI * 2);
+    ctx.arc(childX + 7, childBaseY - 78, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#3a2a1a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(childX, childBaseY - 70, 8, 0.3, Math.PI - 0.3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(childX - 15, childBaseY - 90); ctx.lineTo(childX - 10, childBaseY - 100);
+    ctx.moveTo(childX - 5, childBaseY - 93); ctx.lineTo(childX - 3, childBaseY - 105);
+    ctx.moveTo(childX + 5, childBaseY - 93); ctx.lineTo(childX + 8, childBaseY - 105);
+    ctx.moveTo(childX + 13, childBaseY - 90); ctx.lineTo(childX + 18, childBaseY - 100);
+    ctx.stroke();
+    ctx.fillStyle = '#5a8aaa';
+    ctx.beginPath();
+    ctx.moveTo(childX - 20, childBaseY - 55);
+    ctx.lineTo(childX + 20, childBaseY - 55);
+    ctx.lineTo(childX + 25, childBaseY);
+    ctx.lineTo(childX - 25, childBaseY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#3a2a1a';
+    ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(childX - 20, childBaseY - 50); ctx.lineTo(childX - 45, childBaseY - 30);
+    ctx.moveTo(childX + 20, childBaseY - 50); ctx.lineTo(childX + 45, childBaseY - 30);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(childX - 15, childBaseY); ctx.lineTo(childX - 20, childBaseY + 20);
+    ctx.moveTo(childX + 15, childBaseY); ctx.lineTo(childX + 20, childBaseY + 20);
+    ctx.stroke();
+
+    ctx.fillStyle = '#3a2a1a';
+    ctx.font = 'bold 24px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(t('school.drawing.sign'), cx, cy + h/2 - 30);
+
+    ctx.restore();
+}
+
+// ===================== رسالة المعلمة =====================
+function drawTeacherLetter(cx, cy, w, h) {
+    ctx.save();
+    ctx.fillStyle = '#ece4d0';
+    ctx.fillRect(cx - w/2, cy - h/2, w, h);
+    ctx.strokeStyle = '#a89878';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - w/2, cy - h/2, w, h);
+    ctx.fillStyle = 'rgba(60, 30, 10, 0.4)';
+    ctx.beginPath();
+    ctx.moveTo(cx - w/2, cy + h/2);
+    ctx.lineTo(cx - w/2 + 40, cy + h/2 - 15);
+    ctx.lineTo(cx - w/2 + 80, cy + h/2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + w/2, cy - h/2);
+    ctx.lineTo(cx + w/2 - 30, cy - h/2 + 10);
+    ctx.lineTo(cx + w/2, cy - h/2 + 30);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(140, 120, 90, 0.3)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 8; i++) {
+        const y = cy - h/2 + 60 + i * 40;
+        ctx.beginPath();
+        ctx.moveTo(cx - w/2 + 40, y);
+        ctx.lineTo(cx + w/2 - 40, y);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+// ===================== رسم شاشة اختيار اللغة =====================
+function drawLanguageSelectionScreen() {
+    // خلفية سماء داكنة
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+    skyGrad.addColorStop(0, '#1a1a22');
+    skyGrad.addColorStop(0.5, '#2a2a32');
+    skyGrad.addColorStop(1, '#0a0a10');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // شرارات خفيفة في الخلف
+    const time = Date.now() / 1000;
+    for (let i = 0; i < 30; i++) {
+        const x = (i * 137.5 + time * 20) % W;
+        const y = (i * 73.3 + time * 10) % H;
+        const alpha = 0.15 + Math.sin(time + i) * 0.1;
+        ctx.fillStyle = `rgba(212, 175, 55, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // العنوان بالعربي (دائماً)
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 42px "Segoe UI", Tahoma';
+    ctx.fillText('غزة: أطياف الرماد والصمود', W/2, 130);
+
+    // العنوان بالإنجليزي (دائماً، بخط أصغر)
+    ctx.fillStyle = 'rgba(212, 175, 55, 0.6)';
+    ctx.font = '18px "Segoe UI", Tahoma';
+    ctx.fillText('Gaza: Specters of Ash and Resilience', W/2, 165);
+
+    // خط فاصل ذهبي
+    ctx.strokeStyle = 'rgba(212, 175, 55, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(W/2 - 200, 190);
+    ctx.lineTo(W/2 + 200, 190);
+    ctx.stroke();
+
+    // نص "اختر اللغة" حسب اللغة الحالية
+    ctx.fillStyle = '#e0e0e0';
+    ctx.font = 'bold 24px "Segoe UI", Tahoma';
+    ctx.fillText(t('lang.choose'), W/2, 245);
+
+    // بطاقات اللغات (تمرير أفقي)
+    const cardW = 220;
+    const cardH = 140;
+    const gap = 60;
+    const totalW = cardW * 2 + gap;
+    const startX = (W - totalW) / 2 + langScrollX;
+    const cardY = 290;
+
+    // البطاقة العربية
+    drawLangCard(startX, cardY, cardW, cardH, 'العربية', '🇸🇦', currentLang === 'ar', 0);
+    // البطاقة الإنجليزية
+    drawLangCard(startX + cardW + gap, cardY, cardW, cardH, 'English', '🇬🇧', currentLang === 'en', 1);
+
+    // نص صغير أسفل - تلميح التمرير
+    ctx.fillStyle = 'rgba(180, 180, 180, 0.5)';
+    ctx.font = '14px "Segoe UI", Tahoma';
+    ctx.fillText('← →', W/2, H - 40);
+
+    // شريط تمرير صغير
+    const barY = H - 25;
+    const barW = 200;
+    const barX = W/2 - barW/2;
+    ctx.fillStyle = 'rgba(212, 175, 55, 0.15)';
+    ctx.fillRect(barX, barY, barW, 3);
+    // موضع التمرير الحالي
+    const scrollRatio = Math.min(1, Math.max(0, -langScrollX / gap));
+    ctx.fillStyle = 'rgba(212, 175, 55, 0.7)';
+    ctx.fillRect(barX + scrollRatio * (barW - 60), barY, 60, 3);
+}
+
+function drawLangCard(x, y, w, h, label, flag, isSelected, index) {
+    // ظل البطاقة
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(x + 4, y + 4, w, h);
+
+    // خلفية البطاقة
+    if (isSelected) {
+        ctx.fillStyle = 'rgba(212, 175, 55, 0.15)';
+    } else {
+        ctx.fillStyle = 'rgba(30, 30, 38, 0.9)';
+    }
+    ctx.fillRect(x, y, w, h);
+
+    // إطار البطاقة
+    ctx.strokeStyle = isSelected ? '#d4af37' : 'rgba(150, 150, 150, 0.4)';
+    ctx.lineWidth = isSelected ? 3 : 1.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // علم
+    ctx.font = '52px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(flag, x + w/2, y + 70);
+
+    // اسم اللغة
+    ctx.fillStyle = isSelected ? '#d4af37' : '#e0e0e0';
+    ctx.font = 'bold 26px "Segoe UI", Tahoma';
+    ctx.fillText(label, x + w/2, y + 115);
+}
+
+// ===================== رسم المدرسة الخارجية =====================
+function drawSchoolExterior(screenX, baseY) {
+    const schoolW = SCHOOL_WIDTH;
+    const schoolH = SCHOOL_HEIGHT;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(screenX + schoolW/2, baseY + 3, schoolW * 0.55, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#7a7a82';
+    ctx.fillRect(screenX, baseY - schoolH, schoolW, schoolH);
+
+    ctx.fillStyle = '#5a5a62';
+    ctx.beginPath();
+    ctx.moveTo(screenX - 5, baseY - schoolH - 5);
+    ctx.lineTo(screenX + 40, baseY - schoolH - 18);
+    ctx.lineTo(screenX + 120, baseY - schoolH - 8);
+    ctx.lineTo(screenX + 180, baseY - schoolH - 30);
+    ctx.lineTo(screenX + 250, baseY - schoolH - 12);
+    ctx.lineTo(screenX + 330, baseY - schoolH - 22);
+    ctx.lineTo(screenX + schoolW + 5, baseY - schoolH - 6);
+    ctx.lineTo(screenX + schoolW + 5, baseY - schoolH + 10);
+    ctx.lineTo(screenX - 5, baseY - schoolH + 10);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(40, 40, 45, 0.65)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(screenX + 15, baseY - schoolH + 15); ctx.lineTo(screenX + 45, baseY - schoolH + 90);
+    ctx.moveTo(screenX + 30, baseY - schoolH + 60); ctx.lineTo(screenX + 20, baseY - schoolH + 130);
+    ctx.moveTo(screenX + schoolW - 30, baseY - schoolH + 20); ctx.lineTo(screenX + schoolW - 60, baseY - schoolH + 100);
+    ctx.moveTo(screenX + schoolW - 45, baseY - schoolH + 80); ctx.lineTo(screenX + schoolW - 25, baseY - schoolH + 150);
+    ctx.moveTo(screenX + 200, baseY - schoolH + 100); ctx.lineTo(screenX + 220, baseY - schoolH + 150);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(50,50,58,0.4)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(screenX, baseY - schoolH + i * 60);
+        ctx.lineTo(screenX + schoolW, baseY - schoolH + i * 60);
+        ctx.stroke();
+    }
+
+    for (let i = 0; i < 3; i++) {
+        const wx = screenX + 30 + i * 130;
+        const wy = baseY - schoolH + 20;
+        ctx.fillStyle = '#2a2a32';
+        ctx.fillRect(wx, wy, 40, 45);
+        ctx.strokeStyle = '#0a0a10';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(wx + 5, wy + 5); ctx.lineTo(wx + 35, wy + 40);
+        ctx.moveTo(wx + 35, wy + 5); ctx.lineTo(wx + 5, wy + 40);
+        ctx.stroke();
+    }
+
+    const doorW = 45;
+    const doorH = 80;
+    const doorSpacing = (schoolW - 40) / SCHOOL_DOORS_COUNT;
+    const doorStartX = screenX + 20;
+
+    for (let i = 0; i < SCHOOL_DOORS_COUNT; i++) {
+        const dx = doorStartX + i * doorSpacing;
+        const dy = baseY - doorH;
+
+        if (i === SCHOOL_OPEN_DOOR) {
+            ctx.fillStyle = '#3a2a1a';
+            ctx.fillRect(dx - 3, dy - 3, doorW + 6, doorH + 3);
+            ctx.fillStyle = '#0a0a10';
+            ctx.fillRect(dx, dy, doorW, doorH);
+            ctx.fillStyle = '#5a4a3a';
+            ctx.beginPath();
+            ctx.moveTo(dx, dy); ctx.lineTo(dx - 15, dy + 5);
+            ctx.lineTo(dx - 15, dy + doorH); ctx.lineTo(dx, dy + doorH);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = 'rgba(212, 175, 55, 0.4)';
+            ctx.beginPath();
+            ctx.arc(dx + doorW/2, dy + doorH/2, 4, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = '#4a3a2a';
+            ctx.fillRect(dx, dy, doorW, doorH);
+            ctx.strokeStyle = '#2a1a0a';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(dx, dy + doorH/3); ctx.lineTo(dx + doorW, dy + doorH/3);
+            ctx.moveTo(dx, dy + doorH*2/3); ctx.lineTo(dx + doorW, dy + doorH*2/3);
+            ctx.stroke();
+            ctx.fillStyle = '#6a6a72';
+            ctx.beginPath();
+            ctx.arc(dx + doorW - 8, dy + doorH/2, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    const signX = screenX + schoolW/2 - 80;
+    const signY = baseY - schoolH - 5;
+    ctx.fillStyle = '#4a3a2a';
+    ctx.fillRect(signX, signY - 32, 160, 32);
+    ctx.strokeStyle = '#2a1a0a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(signX, signY - 32, 160, 32);
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    const schoolName = currentLang === 'ar' ? 'مدرسة الأمل' : 'Al-Amal School';
+    ctx.fillText(schoolName, signX + 80, signY - 8);
+    ctx.textAlign = 'start';
+
+    ctx.fillStyle = 'rgba(15, 10, 5, 0.7)';
+    ctx.beginPath();
+    ctx.moveTo(screenX + 5, baseY - schoolH + 15);
+    ctx.lineTo(screenX + 50, baseY - schoolH + 70);
+    ctx.lineTo(screenX + 15, baseY - schoolH + 115);
+    ctx.lineTo(screenX + 70, baseY - schoolH + 150);
+    ctx.lineTo(screenX + 35, baseY - 15);
+    ctx.lineTo(screenX + 5, baseY - 15);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#5a5a62';
+    ctx.beginPath();
+    ctx.arc(screenX + 25, baseY - 3, 8, 0, Math.PI * 2);
+    ctx.arc(screenX + 55, baseY - 2, 6, 0, Math.PI * 2);
+    ctx.arc(screenX + schoolW - 30, baseY - 3, 7, 0, Math.PI * 2);
+    ctx.arc(screenX + schoolW - 60, baseY - 2, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(160, 180, 200, 0.5)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 4; i++) {
+        const gx = screenX + 100 + i * 60;
+        ctx.beginPath();
+        ctx.moveTo(gx, baseY - 3); ctx.lineTo(gx + 6, baseY - 8);
+        ctx.stroke();
+    }
+
+    const smokeT = Date.now() / 1000;
+    for (let i = 0; i < 3; i++) {
+        const sx = screenX + 30 + Math.sin(smokeT + i) * 10;
+        const sy = baseY - schoolH + 20 - i * 30 - (smokeT * 8 + i * 25) % 80;
+        ctx.fillStyle = `rgba(60, 60, 65, ${0.25 - i * 0.06})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 15 + i * 6, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+// ===================== رسم المشفى الخارجي =====================
+function drawHospitalExterior(screenX, baseY) {
+    const hospW = HOSPITAL_WIDTH;
+    const hospH = HOSPITAL_HEIGHT;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(screenX + hospW/2, baseY + 3, hospW * 0.55, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#7a7a82';
+    ctx.fillRect(screenX, baseY - hospH, hospW, hospH);
+
+    ctx.fillStyle = '#4a4a52';
+    ctx.beginPath();
+    ctx.moveTo(screenX + hospW - 80, baseY - hospH);
+    ctx.lineTo(screenX + hospW - 50, baseY - hospH - 20);
+    ctx.lineTo(screenX + hospW - 20, baseY - hospH - 5);
+    ctx.lineTo(screenX + hospW, baseY - hospH - 30);
+    ctx.lineTo(screenX + hospW, baseY);
+    ctx.lineTo(screenX + hospW - 80, baseY);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#5a5a62';
+    ctx.beginPath();
+    ctx.moveTo(screenX - 10, baseY - hospH);
+    ctx.lineTo(screenX + 60, baseY - hospH - 20);
+    ctx.lineTo(screenX + 140, baseY - hospH - 5);
+    ctx.lineTo(screenX + 200, baseY - hospH - 25);
+    ctx.lineTo(screenX + 260, baseY - hospH - 8);
+    ctx.lineTo(screenX + hospW - 40, baseY - hospH - 15);
+    ctx.lineTo(screenX + hospW - 40, baseY - hospH + 8);
+    ctx.lineTo(screenX - 10, baseY - hospH + 8);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(40, 40, 45, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(screenX + 20, baseY - hospH + 30); ctx.lineTo(screenX + 60, baseY - hospH + 110);
+    ctx.moveTo(screenX + 40, baseY - hospH + 90); ctx.lineTo(screenX + 25, baseY - hospH + 180);
+    ctx.moveTo(screenX + 180, baseY - hospH + 50); ctx.lineTo(screenX + 210, baseY - hospH + 120);
+    ctx.moveTo(screenX + 200, baseY - hospH + 100); ctx.lineTo(screenX + 180, baseY - hospH + 200);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(50,50,58,0.45)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(screenX, baseY - hospH + i * 70);
+        ctx.lineTo(screenX + hospW, baseY - hospH + i * 70);
+        ctx.stroke();
+    }
+
+    for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 4; col++) {
+            const wx = screenX + 25 + col * 80;
+            const wy = baseY - hospH + 25 + row * 70;
+            ctx.fillStyle = '#2a2a32';
+            ctx.fillRect(wx, wy, 45, 45);
+            ctx.strokeStyle = '#0a0a10';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(wx + 8, wy + 8); ctx.lineTo(wx + 35, wy + 38);
+            ctx.moveTo(wx + 38, wy + 10); ctx.lineTo(wx + 10, wy + 35);
+            ctx.stroke();
+        }
+    }
+
+    const crossX = screenX + hospW/2;
+    const crossY = baseY - hospH + 100;
+    ctx.fillStyle = 'rgba(150, 25, 25, 0.8)';
+    ctx.fillRect(crossX - 8, crossY - 25, 16, 50);
+    ctx.fillRect(crossX - 25, crossY - 8, 50, 16);
+    ctx.strokeStyle = 'rgba(50, 15, 15, 0.95)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(crossX - 20, crossY - 20); ctx.lineTo(crossX + 15, crossY + 20);
+    ctx.stroke();
+
+    const doorW = 60;
+    const doorH = 100;
+    const doorX = screenX + hospW/2 - doorW/2;
+    const doorY = baseY - doorH;
+
+    ctx.fillStyle = '#3a2a1a';
+    ctx.fillRect(doorX - 4, doorY - 4, doorW + 8, doorH + 4);
+    ctx.fillStyle = '#0a0a10';
+    ctx.fillRect(doorX, doorY, doorW, doorH);
+    ctx.fillStyle = '#5a4a3a';
+    ctx.beginPath();
+    ctx.moveTo(doorX, doorY); ctx.lineTo(doorX - 20, doorY + 8);
+    ctx.lineTo(doorX - 20, doorY + doorH); ctx.lineTo(doorX, doorY + doorH);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(212, 175, 55, 0.4)';
+    ctx.beginPath();
+    ctx.arc(doorX + doorW/2, doorY + doorH/2, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    const signX = screenX + hospW/2 - 90;
+    const signY = baseY - hospH + 8;
+    ctx.fillStyle = '#4a3a2a';
+    ctx.fillRect(signX, signY, 180, 36);
+    ctx.strokeStyle = '#2a1a0a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(signX, signY, 180, 36);
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 24px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(t('hospital.hospital.name'), signX + 90, signY + 27);
+    ctx.textAlign = 'start';
+
+    ctx.fillStyle = 'rgba(15, 10, 5, 0.7)';
+    ctx.beginPath();
+    ctx.moveTo(screenX + hospW - 40, baseY - hospH + 30);
+    ctx.lineTo(screenX + hospW - 15, baseY - hospH + 80);
+    ctx.lineTo(screenX + hospW - 45, baseY - hospH + 130);
+    ctx.lineTo(screenX + hospW - 20, baseY - hospH + 180);
+    ctx.lineTo(screenX + hospW - 35, baseY - 30);
+    ctx.lineTo(screenX + hospW - 5, baseY - 30);
+    ctx.closePath();
+    ctx.fill();
+
+    const smokeTime = Date.now() / 1000;
+    for (let i = 0; i < 5; i++) {
+        const smokeX = screenX + hospW - 30 + Math.sin(smokeTime + i) * 12;
+        const smokeY = baseY - hospH + 40 - i * 25 - (smokeTime * 8 + i * 20) % 80;
+        ctx.fillStyle = `rgba(55, 55, 60, ${0.3 - i * 0.05})`;
+        ctx.beginPath();
+        ctx.arc(smokeX, smokeY, 14 + i * 6, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.fillStyle = '#5a5a62';
+    ctx.beginPath();
+    ctx.arc(screenX + 40, baseY - 3, 7, 0, Math.PI * 2);
+    ctx.arc(screenX + 75, baseY - 2, 5, 0, Math.PI * 2);
+    ctx.arc(screenX + hospW - 40, baseY - 3, 8, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// ===================== رسم كراسة =====================
+function drawNotebook(nb, screenX, screenY) {
+    const nbW = 26;
+    const nbH = 34;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(screenX, screenY + 3, nbW * 0.5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const baseColor = nb.isYusuf ? '#a89878' : '#8a7a6a';
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(screenX - nbW/2, screenY - nbH, nbW, nbH);
+
+    ctx.strokeStyle = '#3a2a1a';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(screenX - nbW/2, screenY - nbH, nbW, nbH);
+
+    ctx.fillStyle = '#5a4a3a';
+    ctx.fillRect(screenX - nbW/2, screenY - nbH, 4, nbH);
+
+    ctx.save();
+    ctx.fillStyle = '#1a1a1a';
+    ctx.font = 'bold 9px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+
+    const burnY = screenY - nbH * 0.65;
+    if (nb.burntAmount > 0.5) {
+        ctx.globalAlpha = 0.6;
+        ctx.fillText(nb.name, screenX, screenY - nbH * 0.55);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(20, 10, 5, 0.75)';
+        ctx.fillRect(screenX - nbW/2 + 4, burnY - 4, nbW - 4, 12);
+    } else {
+        ctx.fillText(nb.name, screenX, screenY - nbH * 0.55);
+        ctx.fillStyle = 'rgba(20, 10, 5, 0.4)';
+        ctx.fillRect(screenX + 2, burnY, 6, 6);
+    }
+    ctx.restore();
+}
+
+// ===================== رسم شهادة وفاة =====================
+function drawDeathCertificate(certKey, isLast) {
+    const certW = 560;
+    const certH = 440;
+    const cx = W / 2;
+    const certY = 20;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.94)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#ece4d0';
+    ctx.fillRect(cx - certW/2, certY, certW, certH);
+
+    ctx.strokeStyle = isLast ? '#8a2a2a' : '#5a4a3a';
+    ctx.lineWidth = isLast ? 3 : 2;
+    ctx.strokeRect(cx - certW/2, certY, certW, certH);
+
+    ctx.fillStyle = isLast ? '#8a2a2a' : '#5a4a3a';
+    ctx.fillRect(cx - certW/2, certY, certW, 55);
+
+    ctx.fillStyle = '#ece4d0';
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(t('hospital.cert.hospital'), cx, certY + 37);
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.font = 'bold 32px "Segoe UI", Tahoma';
+    ctx.fillText(t('hospital.cert.title'), cx, certY + 130);
+
+    ctx.strokeStyle = '#5a4a3a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - certW/2 + 60, certY + 165);
+    ctx.lineTo(cx + certW/2 - 60, certY + 165);
+    ctx.stroke();
+
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';
+    const fieldX = cx + 200;
+    const valueX = cx + 40;
+    const startY = certY + 215;
+    const lineHeight = 55;
+
+    const idx = currentFileIndex + 1;
+    ctx.fillStyle = '#3a3a3a';
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';   // ✅ تأكيد خط التسمية
+    ctx.textAlign = 'right';
+    ctx.fillText(t('hospital.cert.cause'), fieldX, startY + lineHeight * 3);
+    
+    ctx.fillStyle = isLast ? '#8a2a2a' : '#1a1a1a';
+    const causeText = t('cert.' + idx + '.cause');
+    let causeFontSize = 22;
+    if (causeText.length > 20) causeFontSize = 18;
+    if (causeText.length > 30) causeFontSize = 16;
+    ctx.font = (isLast ? 'bold ' : '') + causeFontSize + 'px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(causeText, valueX, startY + lineHeight * 3);
+    ctx.fillStyle = '#3a3a3a';
+    ctx.textAlign = 'right';
+    ctx.fillText(t('hospital.cert.age'), fieldX, startY + lineHeight);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.textAlign = 'center';
+    ctx.fillText(t('cert.' + idx + '.age'), valueX, startY + lineHeight);
+
+    ctx.fillStyle = '#3a3a3a';
+    ctx.textAlign = 'right';
+    ctx.fillText(t('hospital.cert.date'), fieldX, startY + lineHeight * 2);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.textAlign = 'center';
+    ctx.fillText('2024/03/' + (12 + idx * 3), valueX, startY + lineHeight * 2);
+
+    ctx.fillStyle = '#3a3a3a';
+    ctx.textAlign = 'right';
+    ctx.fillText(t('hospital.cert.cause'), fieldX, startY + lineHeight * 3);
+    ctx.fillStyle = isLast ? '#8a2a2a' : '#1a1a1a';
+    ctx.font = isLast ? 'bold 22px "Segoe UI", Tahoma' : '22px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(t('cert.' + idx + '.cause'), valueX, startY + lineHeight * 3);
+
+    ctx.strokeStyle = '#5a4a3a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - certW/2 + 60, certY + 395);
+    ctx.lineTo(cx + certW/2 - 60, certY + 395);
+    ctx.stroke();
+
+    ctx.strokeStyle = isLast ? 'rgba(138, 42, 42, 0.5)' : 'rgba(90, 74, 58, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx - 110, certY + 415, 20, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = isLast ? 'rgba(138, 42, 42, 0.5)' : 'rgba(90, 74, 58, 0.5)';
+    ctx.font = 'bold 11px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(t('hospital.cert.seal'), cx - 110, certY + 419);
+
+    ctx.fillStyle = '#3a3a3a';
+    ctx.font = 'italic 16px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(t('hospital.cert.doctor'), cx + 100, certY + 419);
+
+    ctx.fillStyle = '#7a7a7a';
+    ctx.font = '18px "Segoe UI", Tahoma';
+    ctx.textAlign = 'right';
+    ctx.fillText(t('hospital.cert.file') + ' ' + String(idx).padStart(3, '0'), cx + certW/2 - 30, certY + certH - 12);
+
+    const bw = 220, bh = 50;
+    fileButtonRect = { x: W/2 - bw/2, y: H - 60, w: bw, h: bh };
+
+    if (isLast) {
+        const pulse = Math.sin(Date.now() / 300) * 0.05 + 0.2;
+        ctx.fillStyle = `rgba(138, 42, 42, ${pulse})`;
+    } else {
+        ctx.fillStyle = 'rgba(212, 175, 55, 0.2)';
+    }
+    ctx.fillRect(fileButtonRect.x, fileButtonRect.y, bw, bh);
+
+    ctx.strokeStyle = isLast ? '#8a2a2a' : '#d4af37';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(fileButtonRect.x, fileButtonRect.y, bw, bh);
+
+    ctx.fillStyle = isLast ? '#8a2a2a' : '#d4af37';
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(t('ui.close'), W/2, fileButtonRect.y + 33);
+}
+
+function drawFileScene() {
+    const isLast = (currentFileIndex === 4);
+    drawDeathCertificate(null, isLast);
+
+    if (isLast) {
+        ctx.save();
+        ctx.globalAlpha = 0.75 + Math.sin(Date.now() / 400) * 0.15;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#d4af37';
+        ctx.font = 'italic 22px "Segoe UI", Tahoma';
+        ctx.fillText(t('hospital.cert.last'), W/2, 15);
+        ctx.restore();
+    }
+}
+
+let fileButtonRect = { x: 0, y: 0, w: 0, h: 0 };
+
+// ===================== رسالة الأم (صفحتان) =====================
+let motherLetterNextRect = { x: 0, y: 0, w: 0, h: 0 };
+let motherLetterBackRect = { x: 0, y: 0, w: 0, h: 0 };
+let motherLetterCloseRect = { x: 0, y: 0, w: 0, h: 0 };
+
+function drawMotherLetterScene() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.96)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 30px "Segoe UI", Tahoma';
+    ctx.fillText(t('msg.mother.title'), W/2, 55);
+
+    ctx.strokeStyle = 'rgba(212, 175, 55, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(W/2 - 200, 75);
+    ctx.lineTo(W/2 + 200, 75);
+    ctx.stroke();
+
+    const prefix = motherLetterPage === 0 ? 'msg.mother.p1.' : 'msg.mother.p2.';
+    const lines = [];
+    for (let i = 1; i <= 12; i++) {
+        lines.push(t(prefix + i));
+    }
+
+    const startY = 120;
+    const lineHeight = 30;
+
+    ctx.font = '22px "Segoe UI", Tahoma';
+    ctx.fillStyle = '#e8e8e8';
+    lines.forEach((line, i) => {
+        ctx.fillText(line, W/2, startY + i * lineHeight);
+    });
+
+    ctx.font = '18px "Segoe UI", Tahoma';
+    ctx.fillStyle = '#888';
+    ctx.fillText(t('ui.page') + ' ' + (motherLetterPage + 1) + ' ' + t('ui.of') + ' 2', W/2, H - 75);
+
+    if (motherLetterPage === 0) {
+        const bw = 220, bh = 48;
+        motherLetterNextRect = { x: W/2 - bw/2, y: H - 60, w: bw, h: bh };
+        ctx.fillStyle = 'rgba(212, 175, 55, 0.2)';
+        ctx.fillRect(motherLetterNextRect.x, motherLetterNextRect.y, bw, bh);
+        ctx.strokeStyle = '#d4af37';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(motherLetterNextRect.x, motherLetterNextRect.y, bw, bh);
+        ctx.fillStyle = '#d4af37';
+        ctx.font = 'bold 22px "Segoe UI", Tahoma';
+        ctx.fillText(t('ui.next'), W/2, motherLetterNextRect.y + 33);
+    } else {
+        const bw = 220, bh = 48, gap = 40;
+        const totalW = bw * 2 + gap;
+        const startX = (W - totalW) / 2;
+        const by = H - 60;
+
+        motherLetterBackRect = { x: startX, y: by, w: bw, h: bh };
+        motherLetterCloseRect = { x: startX + bw + gap, y: by, w: bw, h: bh };
+
+        ctx.fillStyle = 'rgba(180, 180, 180, 0.15)';
+        ctx.fillRect(motherLetterBackRect.x, motherLetterBackRect.y, bw, bh);
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(motherLetterBackRect.x, motherLetterBackRect.y, bw, bh);
+        ctx.fillStyle = '#ccc';
+        ctx.font = 'bold 22px "Segoe UI", Tahoma';
+        ctx.fillText(t('ui.prev'), motherLetterBackRect.x + bw/2, motherLetterBackRect.y + 33);
+
+        ctx.fillStyle = 'rgba(212, 175, 55, 0.2)';
+        ctx.fillRect(motherLetterCloseRect.x, motherLetterCloseRect.y, bw, bh);
+        ctx.strokeStyle = '#d4af37';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(motherLetterCloseRect.x, motherLetterCloseRect.y, bw, bh);
+        ctx.fillStyle = '#d4af37';
+        ctx.font = 'bold 22px "Segoe UI", Tahoma';
+        ctx.fillText(t('ui.close'), motherLetterCloseRect.x + bw/2, motherLetterCloseRect.y + 33);
+    }
+}
+
+// ===================== المشهد السينمائي =====================
+function drawEndingScene() {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, W, H);
+
+    const tt = endingTimer;
+
+    const endingTexts = [
+        { key: 'ending.1', start: 30,  end: 150 },
+        { key: 'ending.2', start: 150, end: 270 },
+        { key: 'ending.3', start: 270, end: 390 },
+        { key: 'ending.4', start: 390, end: 540 }
+    ];
+
+    if (tt > 600) {
+        const alpha = Math.min(1, (tt - 600) / 60);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#d4af37';
+        ctx.font = 'bold 34px "Segoe UI", Tahoma';
+        ctx.fillText(t('title.main'), W/2, H/2 - 40);
+
+        ctx.font = 'bold 24px "Segoe UI", Tahoma';
+        ctx.fillStyle = '#aaa';
+        ctx.fillText(t('title.sub'), W/2, H/2 + 10);
+
+        ctx.font = 'italic 22px "Segoe UI", Tahoma';
+        ctx.fillStyle = '#666';
+        ctx.fillText(t('ui.continue'), W/2, H/2 + 70);
+        ctx.restore();
+    }
+
+    endingTexts.forEach((item) => {
+        if (tt >= item.start && tt <= item.end) {
+            const range = item.end - item.start;
+            const progress = (tt - item.start) / range;
+            let alpha = 0;
+            if (progress < 0.2) alpha = progress / 0.2;
+            else if (progress > 0.8) alpha = (1 - progress) / 0.2;
+            else alpha = 1;
+
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#e0e0e0';
+            ctx.font = 'bold 32px "Segoe UI", Tahoma';
+            ctx.fillText(t(item.key), W/2, H/2);
+            ctx.restore();
+        }
+    });
+
+    if (tt > 900) {
+        const alpha = Math.min(1, (tt - 900) / 60);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        ctx.font = '22px "Segoe UI", Tahoma';
+        ctx.fillStyle = '#888';
+        ctx.fillText(t('ending.memories') + ' ' + memoriesCollected, W/2, H - 100);
+        const minutes = Math.floor((Date.now() - startTime) / 60000);
+        ctx.fillText(t('ending.time') + ' ' + minutes + ' ' + t('ending.minutes'), W/2, H - 70);
+        ctx.restore();
+    }
+
+    if (tt > 1200 && !gameFinished) {
+        const alpha = Math.min(1, (tt - 1200) / 60);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        const bw = 240, bh = 55;
+        const bx = W/2 - bw/2;
+        const by = H - 60;
+        endingButtonRect = { x: bx, y: by, w: bw, h: bh };
+
+        ctx.fillStyle = 'rgba(212, 175, 55, 0.15)';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = '#d4af37';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = '#d4af37';
+        ctx.font = 'bold 22px "Segoe UI", Tahoma';
+        ctx.textAlign = 'center';
+        ctx.fillText(t('ui.end'), W/2, by + 36);
+        ctx.restore();
+    }
+
+    if (gameFinished) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, W, H);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(212, 175, 55, 0.6)';
+        ctx.font = 'italic 64px "Segoe UI", Tahoma';
+        ctx.fillText(t('ui.thanks'), W/2, H/2);
+    }
+}
+
+// ===================== الجسيمات =====================
+const ashes = [];
+const smokePuffs = [];
+const windStreaks = [];
+const floatingDebris = [];
+
+let lightningTimer = 0;
+let lightningActive = false;
+let lightningAlpha = 0;
+
+for (let i = 0; i < 80; i++) {
+    ashes.push({
+        x: Math.random() * W, y: Math.random() * H,
+        size: Math.random() * 2 + 0.5,
+        speedX: (Math.random() - 0.5) * 0.3,
+        speedY: -Math.random() * 0.4 - 0.1,
+        alpha: Math.random() * 0.5 + 0.15,
+        isEmber: Math.random() > 0.85
+    });
+}
+for (let i = 0; i < 14; i++) {
+    smokePuffs.push({
+        x: Math.random() * W, y: 380 + Math.random() * 60,
+        size: 40 + Math.random() * 70,
+        grow: 0.15 + Math.random() * 0.25,
+        speedY: -0.15 - Math.random() * 0.2,
+        speedX: (Math.random() - 0.5) * 0.15,
+        alpha: 0.12 + Math.random() * 0.12,
+        life: 0.3 + Math.random() * 0.7
+    });
+}
+for (let i = 0; i < 20; i++) {
+    windStreaks.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        length: 30 + Math.random() * 80,
+        speed: 0.8 + Math.random() * 1.5,
+        alpha: 0.05 + Math.random() * 0.15
+    });
+}
+for (let i = 0; i < 15; i++) {
+    floatingDebris.push({
+        x: Math.random() * W,
+        y: Math.random() * (GROUND_Y - 100),
+        size: 2 + Math.random() * 3,
+        speedX: 0.5 + Math.random() * 1.2,
+        speedY: (Math.random() - 0.5) * 0.3,
+        rot: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 0.1,
+        alpha: 0.3 + Math.random() * 0.4
+    });
+}
+
+// ===================== التحكم =====================
+const btnForward = document.getElementById('btnForward');
+const btnBack = document.getElementById('btnBack');
+function bindButton(btn, onDown, onUp) {
+    btn.addEventListener('mousedown', e => { e.preventDefault(); startAudio(); onDown(); btn.classList.add('pressed'); });
+    btn.addEventListener('mouseup', e => { e.preventDefault(); onUp(); btn.classList.remove('pressed'); });
+    btn.addEventListener('mouseleave', () => { onUp(); btn.classList.remove('pressed'); });
+    btn.addEventListener('touchstart', e => { e.preventDefault(); startAudio(); onDown(); btn.classList.add('pressed'); }, {passive:false});
+    btn.addEventListener('touchend', e => { e.preventDefault(); onUp(); btn.classList.remove('pressed'); }, {passive:false});
+    btn.addEventListener('touchcancel', () => { onUp(); btn.classList.remove('pressed'); });
+}
+bindButton(btnForward, () => { moveForward = true; player.direction = 1; }, () => { moveForward = false; });
+bindButton(btnBack, () => { moveBack = true; player.direction = -1; }, () => { moveBack = false; });
+
+window.addEventListener('keydown', e => {
+    startAudio();
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { moveForward = true; player.direction = 1; }
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { moveBack = true; player.direction = -1; }
+});
+window.addEventListener('keyup', e => {
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') moveForward = false;
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') moveBack = false;
+});
+
+// ===================== التفاعل باللمس =====================
+let touchActive = false;
+let touchStartX = 0, touchStartY = 0;
+let touchCurrentX = 0, touchCurrentY = 0;
+let draggingPiece = null;
+
+function getCanvasPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    let clientX, clientY;
+    if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY
+    };
+}
+
+const BOARD_SCREEN_X = (W - PIC_W * 1.8) / 2;
+const BOARD_SCREEN_Y = 80;
+const BOARD_SCREEN_W = PIC_W * 1.8;
+const BOARD_SCREEN_H = PIC_H * 1.8;
+const SLOT_W = BOARD_SCREEN_W / COLS;
+const SLOT_H = BOARD_SCREEN_H / ROWS;
+
+const STACK_X = 30;
+const STACK_Y = H - 160;
+const STACK_PIECE_W = 60;
+const STACK_PIECE_H = 45;
+
+function getStackPos(index) {
+    const perRow = 6;
+    const col = index % perRow;
+    const row = Math.floor(index / perRow);
+    return {
+        x: STACK_X + col * (STACK_PIECE_W + 8),
+        y: STACK_Y + row * (STACK_PIECE_H + 8)
+    };
+}
+
+canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+canvas.addEventListener('touchmove', onPointerMove, { passive: false });
+canvas.addEventListener('touchend', onPointerUp, { passive: false });
+canvas.addEventListener('touchcancel', onPointerUp, { passive: false });
+canvas.addEventListener('mousedown', onPointerDown);
+canvas.addEventListener('mousemove', onPointerMove);
+canvas.addEventListener('mouseup', onPointerUp);
+
+function onPointerDown(e) {
+    e.preventDefault();
+    startAudio();
+    const pos = getCanvasPos(e);
+    touchActive = true;
+    touchStartX = pos.x; touchStartY = pos.y;
+    touchCurrentX = pos.x; touchCurrentY = pos.y;
+
+    if (currentScene === 'languageselection') handleLanguageSelectionTouch(pos.x, pos.y);
+    else if (currentScene === 'house') handleHouseTouch(pos.x, pos.y);
+    else if (currentScene === 'puzzle') handlePuzzleTouch(pos.x, pos.y);
+    else if (currentScene === 'message') handleMessageTouch(pos.x, pos.y);
+    else if (currentScene === 'classroom') handleClassroomTouch(pos.x, pos.y);
+    else if (currentScene === 'drawing') handleDrawingTouch(pos.x, pos.y);
+    else if (currentScene === 'letter') handleTeacherLetterTouch(pos.x, pos.y);
+    else if (currentScene === 'emergency') handleEmergencyTouch(pos.x, pos.y);
+    else if (currentScene === 'file') handleFileTouch(pos.x, pos.y);
+    else if (currentScene === 'motherletter') handleMotherLetterTouch(pos.x, pos.y);
+    else if (currentScene === 'ending') handleEndingTouch(pos.x, pos.y);
+}
+
+function onPointerMove(e) {
+    if (!touchActive) return;
+    e.preventDefault();
+    const pos = getCanvasPos(e);
+    touchCurrentX = pos.x; touchCurrentY = pos.y;
+    if (currentScene === 'languageselection') {
+        langScrollTarget = langScrollStartX + (pos.x - langDragStartX);
+        // حدود التمرير
+        const maxScroll = 0;
+        const minScroll = -60;
+        langScrollTarget = Math.max(minScroll, Math.min(maxScroll, langScrollTarget));
+        langScrollX += (langScrollTarget - langScrollX) * 0.15;
+    }
+    if (currentScene === 'puzzle' && draggingPiece) {
+        draggingPiece.dragX = pos.x - STACK_PIECE_W/2;
+        draggingPiece.dragY = pos.y - STACK_PIECE_H/2;
+    }
+}
+
+function onPointerUp(e) {
+    if (!touchActive) return;
+    e.preventDefault();
+    touchActive = false;
+    const pos = getCanvasPos(e);
+    if (currentScene === 'puzzle' && draggingPiece) {
+        attemptPlacePiece(draggingPiece, pos.x, pos.y);
+        draggingPiece = null;
+    }
+}
+
+// ===================== تفاعل شاشة اختيار اللغة =====================
+function handleLanguageSelectionTouch(px, py) {
+    const cardW = 220;
+    const cardH = 140;
+    const gap = 60;
+    const totalW = cardW * 2 + gap;
+    const startX = (W - totalW) / 2 + langScrollX;
+    const cardY = 290;
+
+    // البطاقة العربية
+    if (px > startX && px < startX + cardW && py > cardY && py < cardY + cardH) {
+        applyLanguage('ar');
+        startAudio();
+        startTransition('road', () => {
+            storyBox.innerText = t('story.intro');
+        });
+        return;
+    }
+    // البطاقة الإنجليزية
+    const enX = startX + cardW + gap;
+    if (px > enX && px < enX + cardW && py > cardY && py < cardY + cardH) {
+        applyLanguage('en');
+        startAudio();
+        startTransition('road', () => {
+            storyBox.innerText = t('story.intro');
+        });
+        return;
+    }
+}
+
+// تفاعل التمرير - start
+const origPointerDown = onPointerDown;
+window.addEventListener('touchstart', (e) => {
+    if (currentScene === 'languageselection') {
+        const pos = getCanvasPos(e);
+        isDraggingLang = true;
+        langDragStartX = pos.x;
+        langScrollStartX = langScrollX;
+    }
+}, { passive: true });
+
+// ===================== تفاعل الغرفة =====================
+function handleHouseTouch(px, py) {
+    for (let p of pieces) {
+        if (p.collected || p.placed) continue;
+        const screenX = p.roomX - roomX;
+        if (screenX < -50 || screenX > W + 50) continue;
+        const dx = px - screenX;
+        const dy = py - p.roomY;
+        if (Math.abs(dx) < 22 && Math.abs(dy) < 22) {
+            if (!p.flipped) {
+                p.flipped = true;
+                p.flipTimer = 30;
+                playPip();
+            }
+            p.collected = true;
+            piecesCollected++;
+            playSnap();
+            showTopText(t('house.got.piece') + ' (' + piecesCollected + '/' + TOTAL_PIECES + ')', 120);
+            updateTopTextForHouse();
+            break;
+        }
+    }
+}
+
+// ===================== تفاعل الصف =====================
+function handleClassroomTouch(px, py) {
+    if (!yusufNotebookFound) {
+        const worldTouchX = classroomX + px;
+        for (let nb of notebooks) {
+            if (nb.touched) continue;
+            const dx = worldTouchX - nb.x;
+            const dy = py - (nb.y - 20);
+            if (Math.abs(dx) < 20 && Math.abs(dy) < 25) {
+                nb.touched = true;
+                if (nb.isYusuf) {
+                    yusufNotebookFound = true;
+                    playKeySound();
+                    startTransition('drawing', () => { childDrawingOpen = true; });
+                } else {
+                    playPip();
+                    storyBox.innerText = t('school.notebook') + ' ' + nb.name + '...';
+                }
+                break;
+            }
+        }
+    }
+    if (teacherLetterVisible && !teacherLetterOpen && yusufNotebookFound) {
+        const worldTouchX = classroomX + px;
+        const letterWorldX = 380 + 55;
+        const letterWorldY = CLASSROOM_GROUND_Y - 85;
+        if (Math.abs(worldTouchX - letterWorldX) < 30 && Math.abs(py - letterWorldY) < 30) {
+            playPip();
+            startTransition('letter', () => { teacherLetterOpen = true; });
+        }
+    }
+}
+
+// ===================== تفاعل قسم الطوارئ =====================
+function handleEmergencyTouch(px, py) {
+    for (let f of hiddenFiles) {
+        if (f.collected) continue;
+        const screenX = f.x - emergencyX;
+        const screenY = f.y;
+        if (screenX < -50 || screenX > W + 50) continue;
+        const dx = px - screenX;
+        const dy = py - screenY;
+        if (Math.abs(dx) < 30 && Math.abs(dy) < 30) {
+            f.collected = true;
+            collectedFiles[f.id] = true;
+            playPip();
+            currentFileIndex = f.id;
+            currentFileOpen = true;
+            filesRead = f.id;
+            startTransition('file', () => {});
+            return;
+        }
+    }
+}
+
+// ===================== تفاعل مشهد الملف =====================
+function handleFileTouch(px, py) {
+    if (px > fileButtonRect.x && px < fileButtonRect.x + fileButtonRect.w &&
+        py > fileButtonRect.y && py < fileButtonRect.y + fileButtonRect.h) {
+
+        if (currentFileIndex === 4) {
+            filesRead = 5;
+            currentFileOpen = false;
+            motherLetterPage = 0;
+            startTransition('motherletter', () => {
+                motherLetterOpen = true;
+            });
+            return;
+        }
+
+        playPip();
+        startTransition('emergency', () => {});
+    }
+}
+
+// ===================== تفاعل رسالة الأم =====================
+function handleMotherLetterTouch(px, py) {
+    if (motherLetterPage === 0) {
+        if (px > motherLetterNextRect.x && px < motherLetterNextRect.x + motherLetterNextRect.w &&
+            py > motherLetterNextRect.y && py < motherLetterNextRect.y + motherLetterNextRect.h) {
+            motherLetterPage = 1;
+            playPip();
+        }
+    } else {
+        if (px > motherLetterBackRect.x && px < motherLetterBackRect.x + motherLetterBackRect.w &&
+            py > motherLetterBackRect.y && py < motherLetterBackRect.y + motherLetterBackRect.h) {
+            motherLetterPage = 0;
+            playPip();
+            return;
+        }
+        if (px > motherLetterCloseRect.x && px < motherLetterCloseRect.x + motherLetterCloseRect.w &&
+            py > motherLetterCloseRect.y && py < motherLetterCloseRect.y + motherLetterCloseRect.h) {
+            motherLetterOpen = false;
+            hospitalCompleted = true;
+            motherLetterPage = 0;
+            startTransition('ending', () => {
+                endingStarted = true;
+                endingTimer = 0;
+                roadSoundsPaused = true;
+            });
+        }
+    }
+}
+
+// ===================== تفاعل زر النهاية =====================
+function handleEndingTouch(px, py) {
+    if (gameFinished) return;
+    if (px > endingButtonRect.x && px < endingButtonRect.x + endingButtonRect.w &&
+        py > endingButtonRect.y && py < endingButtonRect.y + endingButtonRect.h) {
+        gameFinished = true;
+        stopAllAudio();
+    }
+}
+
+// ===================== تفاعل اللغز =====================
+let drawingButtonRect = { x: 0, y: 0, w: 0, h: 0 };
+let teacherLetterButtonRect = { x: 0, y: 0, w: 0, h: 0 };
+
+function handleDrawingTouch(px, py) {
+    if (px > drawingButtonRect.x && px < drawingButtonRect.x + drawingButtonRect.w &&
+        py > drawingButtonRect.y && py < drawingButtonRect.y + drawingButtonRect.h) {
+        childDrawingOpen = false;
+        currentScene = 'classroom';
+        teacherLetterVisible = true;
+        storyBox.innerText = t('school.drawing.hint');
+    }
+}
+
+function handleTeacherLetterTouch(px, py) {
+    if (px > teacherLetterButtonRect.x && px < teacherLetterButtonRect.x + teacherLetterButtonRect.w &&
+        py > teacherLetterButtonRect.y && py < teacherLetterButtonRect.y + teacherLetterButtonRect.h) {
+        teacherLetterOpen = false;
+        schoolCompleted = true;
+        currentScene = 'classroom';
+        storyBox.innerText = t('school.exited');
+    }
+}
+
+function handlePuzzleTouch(px, py) {
+    const unplaced = pieces.filter(p => p.collected && !p.placed);
+    for (let i = 0; i < unplaced.length; i++) {
+        const p = unplaced[i];
+        const stackPos = getStackPos(i);
+        if (px > stackPos.x && px < stackPos.x + STACK_PIECE_W &&
+            py > stackPos.y && py < stackPos.y + STACK_PIECE_H) {
+            draggingPiece = { piece: p, dragX: stackPos.x, dragY: stackPos.y };
+            return;
+        }
+    }
+}
+
+function attemptPlacePiece(drag, px, py) {
+    const p = drag.piece;
+    const localX = px - BOARD_SCREEN_X;
+    const localY = py - BOARD_SCREEN_Y;
+    if (localX < 0 || localX > BOARD_SCREEN_W || localY < 0 || localY > BOARD_SCREEN_H) {
+        playReject();
+        return;
+    }
+    const col = Math.floor(localX / SLOT_W);
+    const row = Math.floor(localY / SLOT_H);
+    if (col < 0 || col >= COLS || row < 0 || row >= ROWS) { playReject(); return; }
+
+    if (col === p.col && row === p.row) {
+        if (pieces.some(q => q !== p && q.placed && q.col === col && q.row === row)) {
+            playReject();
+            return;
+        }
+        p.placed = true;
+        playSnap();
+        checkPuzzleComplete();
+    } else {
+        playReject();
+    }
+}
+
+function checkPuzzleComplete() {
+    if (puzzleSolved) return;
+    const allPlaced = pieces.every(p => p.placed);
+    if (!allPlaced) return;
+    puzzleSolved = true;
+    playSnap();
+
+    setTimeout(() => {
+        keyDropped = true;
+        keyPosition.x = BOARD_ROOM_X + PIC_W / 2;
+        keyPosition.y = BOARD_ROOM_Y + PIC_H + 40;
+        keyPosition.vy = 0;
+        storyBox.innerText = t('house.puzzle.done');
+    }, 800);
+
+    setTimeout(() => {
+        currentScene = 'house';
+        worldX = BOARD_ROOM_X - W / 2 + 100;
+        if (worldX < 0) worldX = 0;
+        if (worldX > ROOM_WIDTH - W) worldX = ROOM_WIDTH - W;
+        roomX = worldX;
+    }, 1800);
+}
+
+// ===================== تفاعل الرسالة =====================
+let messageButtonRect = { x: 0, y: 0, w: 0, h: 0 };
+
+function handleMessageTouch(px, py) {
+    if (px > messageButtonRect.x && px < messageButtonRect.x + messageButtonRect.w &&
+        py > messageButtonRect.y && py < messageButtonRect.y + messageButtonRect.h) {
+        messageOpen = false;
+        currentScene = 'house';
+        storyBox.innerText = t('house.hint.door');
+    }
+}
+
+// ===================== نصوص أعلى الشاشة =====================
+let topText = { text: "", alpha: 0, targetAlpha: 0, timer: 0 };
+let permanentHint = "";
+
+function showTopText(text, duration) {
+    topText.text = text;
+    topText.targetAlpha = 1;
+    topText.timer = duration;
+}
+
+function updateTopText() {
+    if (topText.timer > 0) {
+        topText.timer--;
+        if (topText.timer === 0) topText.targetAlpha = 0;
+    }
+    topText.alpha += (topText.targetAlpha - topText.alpha) * 0.1;
+    if (topText.alpha < 0.01 && topText.targetAlpha === 0) topText.alpha = 0;
+}
+
+function updateTopTextForHouse() {
+    if (piecesCollected < TOTAL_PIECES) permanentHint = t('house.hint.find');
+    else if (!puzzleSolved) permanentHint = t('house.hint.board');
+    else if (keyDropped && !hasKey) permanentHint = t('house.hint.key');
+    else if (hasKey && !messageOpen) permanentHint = t('house.hint.door');
+}
+function updateTopTextForSchool() {
+    if (!yusufNotebookFound) permanentHint = t('school.hint.1');
+    else if (yusufNotebookFound && !teacherLetterVisible) permanentHint = t('school.hint.2');
+    else if (teacherLetterVisible && !schoolCompleted) permanentHint = t('school.hint.3');
+    else if (schoolCompleted) permanentHint = t('school.hint.4');
+}
+function updateTopTextForHospital() {
+    const remaining = 5 - collectedFiles.filter(c => c).length;
+    if (remaining > 0) permanentHint = t('hospital.hint.hidden') + ' (' + t('hospital.hint.remaining') + ': ' + remaining + ')';
+    else if (remaining === 0 && !hospitalCompleted) permanentHint = "";
+}
+
+// ===================== رسم البيت الخارجي =====================
+function drawHouseExterior(screenX, baseY) {
+    const houseW = HOUSE_WIDTH, houseH = HOUSE_HEIGHT;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(screenX + houseW/2, baseY + 3, houseW * 0.6, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#7a7a82';
+    ctx.fillRect(screenX, baseY - houseH, houseW, houseH);
+
+    ctx.fillStyle = '#5a5a62';
+    ctx.beginPath();
+    ctx.moveTo(screenX - 12, baseY - houseH);
+    ctx.lineTo(screenX + 40, baseY - houseH - 20);
+    ctx.lineTo(screenX + 90, baseY - houseH - 12);
+    ctx.lineTo(screenX + 130, baseY - houseH - 28);
+    ctx.lineTo(screenX + houseW + 12, baseY - houseH - 8);
+    ctx.lineTo(screenX + houseW + 12, baseY - houseH + 12);
+    ctx.lineTo(screenX - 12, baseY - houseH + 12);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(40, 40, 45, 0.65)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(screenX + 20, baseY - houseH + 30);
+    ctx.lineTo(screenX + 45, baseY - houseH + 80);
+    ctx.lineTo(screenX + 35, baseY - houseH + 120);
+    ctx.moveTo(screenX + houseW - 20, baseY - houseH + 40);
+    ctx.lineTo(screenX + houseW - 45, baseY - houseH + 90);
+    ctx.moveTo(screenX + 110, baseY - 30);
+    ctx.lineTo(screenX + 130, baseY - 60);
+    ctx.lineTo(screenX + 125, baseY - 95);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(50,50,58,0.4)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 5; i++) {
+        ctx.beginPath();
+        ctx.moveTo(screenX, baseY - houseH + i * (houseH/5));
+        ctx.lineTo(screenX + houseW, baseY - houseH + i * (houseH/5));
+        ctx.stroke();
+    }
+
+    ctx.fillStyle = '#2a2a32';
+    ctx.fillRect(screenX + 25, baseY - houseH + 25, 35, 40);
+    ctx.strokeStyle = '#0a0a10';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(screenX + 25, baseY - houseH + 25);
+    ctx.lineTo(screenX + 60, baseY - houseH + 65);
+    ctx.moveTo(screenX + 60, baseY - houseH + 25);
+    ctx.lineTo(screenX + 25, baseY - houseH + 65);
+    ctx.moveTo(screenX + 42, baseY - houseH + 25);
+    ctx.lineTo(screenX + 42, baseY - houseH + 65);
+    ctx.stroke();
+
+    ctx.fillStyle = '#3a2a1a';
+    ctx.fillRect(screenX + 80, baseY - 60, 32, 60);
+    ctx.fillStyle = '#0a0a10';
+    ctx.fillRect(screenX + 82, baseY - 58, 28, 56);
+    ctx.fillStyle = '#5a4a3a';
+    ctx.beginPath();
+    ctx.moveTo(screenX + 80, baseY - 60);
+    ctx.lineTo(screenX + 70, baseY - 55);
+    ctx.lineTo(screenX + 70, baseY + 3);
+    ctx.lineTo(screenX + 80, baseY);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = houseCompleted ? '#6a5a3a' : '#4a3a2a';
+    ctx.fillRect(screenX + houseW - 60, baseY - 60, 35, 60);
+    ctx.strokeStyle = '#2a1a0a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(screenX + houseW - 60, baseY - 40); ctx.lineTo(screenX + houseW - 25, baseY - 40);
+    ctx.moveTo(screenX + houseW - 60, baseY - 20); ctx.lineTo(screenX + houseW - 25, baseY - 20);
+    ctx.stroke();
+    ctx.fillStyle = '#d4af37';
+    ctx.beginPath();
+    ctx.arc(screenX + houseW - 32, baseY - 30, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#2a2a32';
+    ctx.fillRect(screenX + houseW - 110, baseY - houseH + 25, 35, 40);
+    ctx.strokeStyle = '#0a0a10';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(screenX + houseW - 110, baseY - houseH + 25);
+    ctx.lineTo(screenX + houseW - 75, baseY - houseH + 65);
+    ctx.moveTo(screenX + houseW - 85, baseY - houseH + 25);
+    ctx.lineTo(screenX + houseW - 110, baseY - houseH + 55);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(15, 10, 5, 0.6)';
+    ctx.beginPath();
+    ctx.moveTo(screenX + 5, baseY - houseH + 15);
+    ctx.lineTo(screenX + 30, baseY - houseH + 55);
+    ctx.lineTo(screenX + 15, baseY - 20);
+    ctx.lineTo(screenX + 5, baseY - 20);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(screenX + houseW - 5, baseY - houseH + 20);
+    ctx.lineTo(screenX + houseW - 30, baseY - houseH + 70);
+    ctx.lineTo(screenX + houseW - 15, baseY - 20);
+    ctx.lineTo(screenX + houseW - 5, baseY - 20);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#5a5a62';
+    ctx.beginPath();
+    ctx.arc(screenX + 10, baseY - 3, 5, 0, Math.PI * 2);
+    ctx.arc(screenX + 25, baseY - 2, 4, 0, Math.PI * 2);
+    ctx.arc(screenX + houseW - 15, baseY - 3, 6, 0, Math.PI * 2);
+    ctx.arc(screenX + houseW - 35, baseY - 2, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#3a2a1a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(screenX + 40, baseY - 3);
+    ctx.lineTo(screenX + 55, baseY - 8);
+    ctx.moveTo(screenX + 45, baseY - 2);
+    ctx.lineTo(screenX + 60, baseY - 4);
+    ctx.stroke();
+}
+
+// ===================== رسم الغرفة الداخلية =====================
+function drawRoomInterior() {
+    const wallGrad = ctx.createLinearGradient(0, 0, 0, ROOM_GROUND_Y);
+    wallGrad.addColorStop(0, '#6a6a72');
+    wallGrad.addColorStop(0.7, '#7a7a82');
+    wallGrad.addColorStop(1, '#6a6a72');
+    ctx.fillStyle = wallGrad;
+    ctx.fillRect(0, 0, W, ROOM_GROUND_Y);
+
+    ctx.strokeStyle = 'rgba(40, 40, 45, 0.55)';
+    ctx.lineWidth = 1.5;
+    const crackOffset = -roomX * 0.3;
+    const cracks = [
+        { x1: 100, y1: 40, x2: 140, y2: 130, x3: 120, y3: 220 },
+        { x1: 500, y1: 60, x2: 540, y2: 150, x3: 510, y3: 260 },
+        { x1: 900, y1: 80, x2: 940, y2: 180, x3: 920, y3: 280 },
+        { x1: 1300, y1: 50, x2: 1340, y2: 160, x3: 1310, y3: 270 }
+    ];
+    cracks.forEach(c => {
+        const sx = c.x1 + crackOffset;
+        ctx.beginPath();
+        ctx.moveTo(sx, c.y1);
+        ctx.lineTo(c.x2 + crackOffset, c.y2);
+        ctx.lineTo(c.x3 + crackOffset, c.y3);
+        ctx.stroke();
+    });
+
+    ctx.strokeStyle = 'rgba(50,50,58,0.14)';
+    ctx.lineWidth = 1;
+    const brickOffset = -roomX * 0.3;
+    for (let y = 30; y < ROOM_GROUND_Y; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y); ctx.lineTo(W, y);
+        ctx.stroke();
+    }
+    for (let row = 0; row < 15; row++) {
+        const y = 30 + row * 40;
+        const off = (row % 2 === 0) ? 0 : 40;
+        for (let x = brickOffset + off; x < W + 100; x += 80) {
+            ctx.beginPath();
+            ctx.moveTo(x, y); ctx.lineTo(x, y + 40);
+            ctx.stroke();
+        }
+    }
+
+    const winX = 300 - roomX;
+    if (winX > -200 && winX < W + 200) {
+        const lightGrad = ctx.createRadialGradient(winX + 60, 170, 10, winX + 60, 170, 180);
+        lightGrad.addColorStop(0, 'rgba(220, 210, 180, 0.25)');
+        lightGrad.addColorStop(1, 'rgba(220, 210, 180, 0)');
+        ctx.fillStyle = lightGrad;
+        ctx.fillRect(winX - 120, 60, 360, 360);
+
+        ctx.fillStyle = '#a8a8b0';
+        ctx.fillRect(winX, 100, 120, 140);
+        ctx.strokeStyle = '#5a5a62';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(winX + 60, 100); ctx.lineTo(winX + 60, 240);
+        ctx.moveTo(winX, 170); ctx.lineTo(winX + 120, 170);
+        ctx.stroke();
+        ctx.strokeStyle = '#3a3a42';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(winX, 100, 120, 140);
+        ctx.strokeStyle = '#2a2a32';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(winX + 20, 100); ctx.lineTo(winX + 40, 180); ctx.lineTo(winX + 30, 240);
+        ctx.moveTo(winX + 90, 100); ctx.lineTo(winX + 80, 170); ctx.lineTo(winX + 100, 240);
+        ctx.stroke();
+    }
+
+    const boardScreenX = BOARD_ROOM_X - roomX;
+    if (boardScreenX > -250 && boardScreenX < W + 250) {
+        ctx.save();
+        const tilt = puzzleSolved ? 0 : -0.06;
+        ctx.translate(boardScreenX + PIC_W/2, BOARD_ROOM_Y + PIC_H/2);
+        ctx.rotate(tilt);
+        ctx.translate(-PIC_W/2, -PIC_H/2);
+
+        ctx.fillStyle = '#5a4a3a';
+        ctx.fillRect(-6, -6, PIC_W + 12, PIC_H + 12);
+        ctx.fillStyle = '#3a2a1a';
+        ctx.fillRect(-3, -3, PIC_W + 6, PIC_H + 6);
+
+        if (puzzleSolved) {
+            drawFamilyPicture(ctx, 0, 0, PIC_W, PIC_H, 1);
+        } else {
+            ctx.fillStyle = '#0a0a10';
+            ctx.fillRect(0, 0, PIC_W, PIC_H);
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const p = pieces.find(q => q.col === c && q.row === r);
+                    if (!p || !p.placed) {
+                        ctx.fillStyle = '#1a1a20';
+                        ctx.fillRect(c * PIECE_W + 1, r * PIECE_H + 1, PIECE_W - 2, PIECE_H - 2);
+                        ctx.strokeStyle = 'rgba(80, 70, 50, 0.7)';
+                        ctx.lineWidth = 1.5;
+                        ctx.strokeRect(c * PIECE_W + 1, r * PIECE_H + 1, PIECE_W - 2, PIECE_H - 2);
+                        ctx.fillStyle = 'rgba(120, 100, 60, 0.35)';
+                        ctx.font = 'bold 18px "Segoe UI", Tahoma';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('?', c * PIECE_W + PIECE_W/2, r * PIECE_H + PIECE_H/2 + 6);
+                    } else {
+                        drawPicturePiece(ctx, c * PIECE_W, r * PIECE_H, PIECE_W, PIECE_H, c, r, 1);
+                    }
+                }
+            }
+        }
+        ctx.restore();
+    }
+
+    const floorGrad = ctx.createLinearGradient(0, ROOM_GROUND_Y, 0, H);
+    floorGrad.addColorStop(0, '#6a5a42');
+    floorGrad.addColorStop(0.5, '#5a4a32');
+    floorGrad.addColorStop(1, '#3a2a1a');
+    ctx.fillStyle = floorGrad;
+    ctx.fillRect(0, ROOM_GROUND_Y, W, H - ROOM_GROUND_Y);
+
+    ctx.strokeStyle = 'rgba(30,20,15,0.5)';
+    ctx.lineWidth = 1;
+    const floorOffset = roomX % 60;
+    for (let x = -floorOffset; x < W + 60; x += 60) {
+        ctx.beginPath();
+        ctx.moveTo(x, ROOM_GROUND_Y);
+        ctx.lineTo(x - 20, H);
+        ctx.stroke();
+    }
+
+    ctx.fillStyle = 'rgba(40, 38, 35, 0.5)';
+    const ashSpots = [
+        { x: 150, y: ROOM_GROUND_Y + 20, w: 60, h: 12 },
+        { x: 400, y: ROOM_GROUND_Y + 40, w: 80, h: 15 },
+        { x: 700, y: ROOM_GROUND_Y + 25, w: 55, h: 10 },
+        { x: 950, y: ROOM_GROUND_Y + 55, w: 70, h: 14 },
+        { x: 1200, y: ROOM_GROUND_Y + 35, w: 50, h: 11 }
+    ];
+    ashSpots.forEach(a => {
+        const sx = a.x - roomX;
+        if (sx > -100 && sx < W + 100) {
+            ctx.beginPath();
+            ctx.ellipse(sx, a.y, a.w, a.h, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+
+    ctx.fillStyle = '#5a5a62';
+    const debris = [
+        { x: 220, y: ROOM_GROUND_Y + 5, r: 4 },
+        { x: 260, y: ROOM_GROUND_Y + 8, r: 3 },
+        { x: 480, y: ROOM_GROUND_Y + 6, r: 5 },
+        { x: 520, y: ROOM_GROUND_Y + 10, r: 3 },
+        { x: 680, y: ROOM_GROUND_Y + 4, r: 4 },
+        { x: 880, y: ROOM_GROUND_Y + 7, r: 5 },
+        { x: 1280, y: ROOM_GROUND_Y + 5, r: 4 }
+    ];
+    debris.forEach(d => {
+        const sx = d.x - roomX;
+        if (sx > -20 && sx < W + 20) {
+            ctx.beginPath();
+            ctx.arc(sx, d.y, d.r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+
+    ctx.strokeStyle = '#3a2a1a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, ROOM_GROUND_Y);
+    ctx.lineTo(W, ROOM_GROUND_Y);
+    ctx.stroke();
+
+    const tableX = 400 - roomX;
+    if (tableX > -200 && tableX < W + 200) {
+        ctx.fillStyle = '#4a3a28';
+        ctx.fillRect(tableX, ROOM_GROUND_Y - 15, 100, 12);
+        ctx.fillRect(tableX + 10, ROOM_GROUND_Y - 5, 6, 25);
+        ctx.fillRect(tableX + 80, ROOM_GROUND_Y - 5, 6, 20);
+    }
+
+    const shelfX = 850 - roomX;
+    if (shelfX > -300 && shelfX < W + 300) {
+        ctx.fillStyle = '#3a2a1a';
+        ctx.fillRect(shelfX, ROOM_GROUND_Y - 40, 140, 8);
+        ctx.fillStyle = '#5a3a1a';
+        ctx.fillRect(shelfX + 20, ROOM_GROUND_Y - 50, 20, 6);
+        ctx.fillStyle = '#3a3a5a';
+        ctx.fillRect(shelfX + 50, ROOM_GROUND_Y - 55, 18, 6);
+        ctx.fillStyle = '#5a1a1a';
+        ctx.fillRect(shelfX + 90, ROOM_GROUND_Y - 48, 22, 6);
+    }
+
+    const doorX = (ROOM_WIDTH - 250) - roomX;
+    if (doorX > -200 && doorX < W + 200) {
+        ctx.fillStyle = '#2a1a0a';
+        ctx.fillRect(doorX - 5, ROOM_GROUND_Y - 220, 110, 220);
+        ctx.fillStyle = hasKey ? '#6a5a3a' : '#4a3a28';
+        ctx.fillRect(doorX, ROOM_GROUND_Y - 215, 100, 215);
+        ctx.strokeStyle = '#2a1a0a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(doorX, ROOM_GROUND_Y - 160); ctx.lineTo(doorX + 100, ROOM_GROUND_Y - 160);
+        ctx.moveTo(doorX, ROOM_GROUND_Y - 100); ctx.lineTo(doorX + 100, ROOM_GROUND_Y - 100);
+        ctx.moveTo(doorX, ROOM_GROUND_Y - 40); ctx.lineTo(doorX + 100, ROOM_GROUND_Y - 40);
+        ctx.stroke();
+        ctx.fillStyle = '#d4af37';
+        ctx.beginPath();
+        ctx.arc(doorX + 85, ROOM_GROUND_Y - 110, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    pieces.forEach(p => {
+        if (p.collected || p.placed) return;
+        const sx = p.roomX - roomX;
+        if (sx < -40 || sx > W + 40) return;
+
+        const glow = ctx.createRadialGradient(sx, p.roomY - 8, 1, sx, p.roomY - 8, 24);
+        glow.addColorStop(0, 'rgba(212, 175, 55, 0.35)');
+        glow.addColorStop(1, 'rgba(212, 175, 55, 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(sx, p.roomY - 8, 24, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath();
+        ctx.ellipse(sx, p.roomY + 5, 14, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#3a2a1a';
+        ctx.fillRect(sx - 14, p.roomY - 20, 28, 34);
+        ctx.fillStyle = '#d4af37';
+        ctx.fillRect(sx - 13, p.roomY - 19, 26, 32);
+
+        if (!p.flipped) {
+            ctx.fillStyle = '#4a4a52';
+            ctx.fillRect(sx - 12, p.roomY - 18, 24, 30);
+            ctx.fillStyle = 'rgba(212, 175, 55, 0.5)';
+            ctx.beginPath();
+            ctx.arc(sx, p.roomY - 3, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#1a1a20';
+            ctx.font = 'bold 12px "Segoe UI", Tahoma';
+            ctx.textAlign = 'center';
+            ctx.fillText('?', sx, p.roomY + 2);
+        } else {
+            drawPicturePiece(ctx, sx - 12, p.roomY - 18, 24, 30, p.col, p.row, 1);
+        }
+    });
+
+    if (keyDropped && !keyPosition.collected) {
+        const kx = keyPosition.x - roomX;
+        const ky = keyPosition.y;
+        if (kx > -50 && kx < W + 50) {
+            const glow = ctx.createRadialGradient(kx, ky, 2, kx, ky, 20);
+            glow.addColorStop(0, 'rgba(212, 175, 55, 0.5)');
+            glow.addColorStop(1, 'rgba(212, 175, 55, 0)');
+            ctx.fillStyle = glow;
+            ctx.beginPath(); ctx.arc(kx, ky, 20, 0, Math.PI * 2); ctx.fill();
+
+            ctx.fillStyle = '#d4af37';
+            ctx.beginPath();
+            ctx.arc(kx, ky - 5, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillRect(kx - 1.5, ky - 3, 3, 12);
+            ctx.fillRect(kx + 1.5, ky + 5, 4, 2);
+            ctx.fillRect(kx + 1.5, ky + 9, 4, 2);
+        }
+    }
+}
+
+// ===================== رسم الصف الداخلي =====================
+function drawClassroomInterior() {
+    const wallGrad = ctx.createLinearGradient(0, 0, 0, CLASSROOM_GROUND_Y);
+    wallGrad.addColorStop(0, '#6e6a60');
+    wallGrad.addColorStop(0.7, '#7e7a70');
+    wallGrad.addColorStop(1, '#6e6a60');
+    ctx.fillStyle = wallGrad;
+    ctx.fillRect(0, 0, W, CLASSROOM_GROUND_Y);
+
+    ctx.strokeStyle = 'rgba(40, 38, 35, 0.6)';
+    ctx.lineWidth = 1.5;
+    const crackOffset = -classroomX * 0.3;
+    const classCracks = [
+        { x1: 80, y1: 60, x2: 130, y2: 150, x3: 110, y3: 250 },
+        { x1: 600, y1: 40, x2: 650, y2: 140, x3: 630, y3: 260 },
+        { x1: 1100, y1: 70, x2: 1140, y2: 170, x3: 1120, y3: 280 }
+    ];
+    classCracks.forEach(c => {
+        const sx = c.x1 + crackOffset;
+        ctx.beginPath();
+        ctx.moveTo(sx, c.y1);
+        ctx.lineTo(c.x2 + crackOffset, c.y2);
+        ctx.lineTo(c.x3 + crackOffset, c.y3);
+        ctx.stroke();
+    });
+
+    ctx.strokeStyle = 'rgba(50,45,40,0.14)';
+    ctx.lineWidth = 1;
+    const brickOffset = -classroomX * 0.3;
+    for (let y = 30; y < CLASSROOM_GROUND_Y; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y); ctx.lineTo(W, y);
+        ctx.stroke();
+    }
+    for (let row = 0; row < 15; row++) {
+        const y = 30 + row * 40;
+        const off = (row % 2 === 0) ? 0 : 40;
+        for (let x = brickOffset + off; x < W + 100; x += 80) {
+            ctx.beginPath();
+            ctx.moveTo(x, y); ctx.lineTo(x, y + 40);
+            ctx.stroke();
+        }
+    }
+
+    const boardX = 200 - classroomX;
+    if (boardX > -400 && boardX < W + 200) {
+        ctx.fillStyle = '#4a3a2a';
+        ctx.fillRect(boardX - 8, 130 - 8, 320 + 16, 180 + 16);
+        ctx.fillStyle = '#1a2a1a';
+        ctx.fillRect(boardX, 130, 320, 180);
+        ctx.strokeStyle = 'rgba(200,200,200,0.2)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(boardX + 30, 170); ctx.lineTo(boardX + 200, 170);
+        ctx.moveTo(boardX + 30, 200); ctx.lineTo(boardX + 250, 200);
+        ctx.moveTo(boardX + 30, 230); ctx.lineTo(boardX + 180, 230);
+        ctx.stroke();
+    }
+
+    const winX = 1000 - classroomX;
+    if (winX > -200 && winX < W + 200) {
+        const lightGrad = ctx.createRadialGradient(winX + 60, 180, 10, winX + 60, 180, 180);
+        lightGrad.addColorStop(0, 'rgba(220, 210, 180, 0.22)');
+        lightGrad.addColorStop(1, 'rgba(220, 210, 180, 0)');
+        ctx.fillStyle = lightGrad;
+        ctx.fillRect(winX - 120, 70, 360, 360);
+
+        ctx.fillStyle = '#a8a8b0';
+        ctx.fillRect(winX, 110, 120, 140);
+        ctx.strokeStyle = '#5a5a62';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(winX + 60, 110); ctx.lineTo(winX + 60, 250);
+        ctx.moveTo(winX, 180); ctx.lineTo(winX + 120, 180);
+        ctx.stroke();
+        ctx.strokeStyle = '#3a3a42';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(winX, 110, 120, 140);
+    }
+
+    const floorGrad = ctx.createLinearGradient(0, CLASSROOM_GROUND_Y, 0, H);
+    floorGrad.addColorStop(0, '#6a5a42');
+    floorGrad.addColorStop(0.5, '#5a4a32');
+    floorGrad.addColorStop(1, '#3a2a1a');
+    ctx.fillStyle = floorGrad;
+    ctx.fillRect(0, CLASSROOM_GROUND_Y, W, H - CLASSROOM_GROUND_Y);
+
+    ctx.strokeStyle = 'rgba(30,20,15,0.5)';
+    ctx.lineWidth = 1;
+    const floorOffset = classroomX % 60;
+    for (let x = -floorOffset; x < W + 60; x += 60) {
+        ctx.beginPath();
+        ctx.moveTo(x, CLASSROOM_GROUND_Y);
+        ctx.lineTo(x - 20, H);
+        ctx.stroke();
+    }
+
+    ctx.strokeStyle = '#3a2a1a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, CLASSROOM_GROUND_Y);
+    ctx.lineTo(W, CLASSROOM_GROUND_Y);
+    ctx.stroke();
+
+    [400, 650, 900].forEach(tx => {
+        const sx = tx - classroomX;
+        if (sx < -200 || sx > W + 200) return;
+        ctx.fillStyle = '#4a3a28';
+        ctx.fillRect(sx, CLASSROOM_GROUND_Y - 15, 90, 10);
+        ctx.fillRect(sx + 8, CLASSROOM_GROUND_Y - 5, 5, 22);
+        ctx.fillRect(sx + 77, CLASSROOM_GROUND_Y - 5, 5, 20);
+        ctx.fillStyle = '#3a2a1a';
+        ctx.fillRect(sx + 100, CLASSROOM_GROUND_Y - 25, 18, 6);
+        ctx.fillRect(sx + 100, CLASSROOM_GROUND_Y - 20, 4, 20);
+        ctx.fillRect(sx + 114, CLASSROOM_GROUND_Y - 20, 4, 20);
+    });
+
+    ctx.fillStyle = 'rgba(200, 190, 160, 0.55)';
+    const papers = [
+        { x: 300, y: CLASSROOM_GROUND_Y + 8 },
+        { x: 450, y: CLASSROOM_GROUND_Y + 15 },
+        { x: 580, y: CLASSROOM_GROUND_Y + 5 },
+        { x: 720, y: CLASSROOM_GROUND_Y + 20 },
+        { x: 850, y: CLASSROOM_GROUND_Y + 10 },
+        { x: 1050, y: CLASSROOM_GROUND_Y + 18 },
+        { x: 1180, y: CLASSROOM_GROUND_Y + 8 }
+    ];
+    papers.forEach(p => {
+        const sx = p.x - classroomX;
+        if (sx > -30 && sx < W + 30) {
+            ctx.save();
+            ctx.translate(sx, p.y);
+            ctx.rotate((p.x % 10 - 5) * 0.05);
+            ctx.fillRect(-8, -3, 16, 6);
+            ctx.restore();
+        }
+    });
+
+    notebooks.forEach(nb => {
+        const sx = nb.x - classroomX;
+        if (sx < -50 || sx > W + 50) return;
+        if (!nb.touched) {
+            drawNotebook(nb, sx, nb.y);
+        }
+    });
+
+    if (teacherLetterVisible && !teacherLetterOpen && yusufNotebookFound) {
+        const letterWorldX = 380 + 55;
+        const letterWorldY = CLASSROOM_GROUND_Y - 85;
+        const lx = letterWorldX - classroomX;
+        if (lx > -60 && lx < W + 60) {
+            const glow = ctx.createRadialGradient(lx, letterWorldY, 2, lx, letterWorldY, 30);
+            glow.addColorStop(0, 'rgba(212, 175, 55, 0.5)');
+            glow.addColorStop(1, 'rgba(212, 175, 55, 0)');
+            ctx.fillStyle = glow;
+            ctx.beginPath(); ctx.arc(lx, letterWorldY, 30, 0, Math.PI * 2); ctx.fill();
+            drawTeacherLetter(lx, letterWorldY, 70, 90);
+        }
+    }
+
+    const doorX = (CLASSROOM_WIDTH - 250) - classroomX;
+    if (doorX > -200 && doorX < W + 200) {
+        ctx.fillStyle = '#2a1a0a';
+        ctx.fillRect(doorX - 5, CLASSROOM_GROUND_Y - 220, 110, 220);
+        ctx.fillStyle = schoolCompleted ? '#6a5a3a' : '#4a3a28';
+        ctx.fillRect(doorX, CLASSROOM_GROUND_Y - 215, 100, 215);
+        ctx.strokeStyle = '#2a1a0a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(doorX, CLASSROOM_GROUND_Y - 160); ctx.lineTo(doorX + 100, CLASSROOM_GROUND_Y - 160);
+        ctx.moveTo(doorX, CLASSROOM_GROUND_Y - 100); ctx.lineTo(doorX + 100, CLASSROOM_GROUND_Y - 100);
+        ctx.moveTo(doorX, CLASSROOM_GROUND_Y - 40); ctx.lineTo(doorX + 100, CLASSROOM_GROUND_Y - 40);
+        ctx.stroke();
+        ctx.fillStyle = '#d4af37';
+        ctx.beginPath();
+        ctx.arc(doorX + 85, CLASSROOM_GROUND_Y - 110, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+// ===================== رسم قسم الطوارئ =====================
+function drawEmergencyRoom() {
+    const wallGrad = ctx.createLinearGradient(0, 0, 0, EMERGENCY_GROUND_Y);
+    wallGrad.addColorStop(0, '#8a8680');
+    wallGrad.addColorStop(0.7, '#9a968e');
+    wallGrad.addColorStop(1, '#8a8680');
+    ctx.fillStyle = wallGrad;
+    ctx.fillRect(0, 0, W, EMERGENCY_GROUND_Y);
+
+    ctx.strokeStyle = 'rgba(60, 56, 52, 0.2)';
+    ctx.lineWidth = 1;
+    const tileOffset = -emergencyX * 0.3;
+    for (let y = 30; y < EMERGENCY_GROUND_Y; y += 50) {
+        ctx.beginPath();
+        ctx.moveTo(0, y); ctx.lineTo(W, y);
+        ctx.stroke();
+    }
+    for (let row = 0; row < 15; row++) {
+        const y = 30 + row * 50;
+        const off = (row % 2 === 0) ? 0 : 50;
+        for (let x = tileOffset + off; x < W + 100; x += 100) {
+            ctx.beginPath();
+            ctx.moveTo(x, y); ctx.lineTo(x, y + 50);
+            ctx.stroke();
+        }
+    }
+
+    ctx.fillStyle = 'rgba(80, 20, 20, 0.4)';
+    const bloodSpots = [
+        { x: 200, y: 200, w: 40, h: 30 },
+        { x: 480, y: 150, w: 25, h: 35 },
+        { x: 720, y: 250, w: 35, h: 25 },
+        { x: 1100, y: 180, w: 45, h: 40 }
+    ];
+    bloodSpots.forEach(spot => {
+        const sx = spot.x - emergencyX;
+        if (sx < -100 || sx > W + 100) return;
+        ctx.beginPath();
+        ctx.ellipse(sx, spot.y, spot.w, spot.h, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    const signX = 300 - emergencyX;
+    if (signX > -250 && signX < W + 200) {
+        ctx.fillStyle = '#4a3a2a';
+        ctx.fillRect(signX - 110, 100, 220, 55);
+        ctx.strokeStyle = '#2a1a0a';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(signX - 110, 100, 220, 55);
+        ctx.fillStyle = '#e0d0b0';
+        ctx.font = 'bold 24px "Segoe UI", Tahoma';
+        ctx.textAlign = 'center';
+        ctx.fillText(t('hospital.sign'), signX, 138);
+        ctx.textAlign = 'start';
+    }
+
+    const clockX = 1300 - emergencyX;
+    if (clockX > -100 && clockX < W + 100) {
+        ctx.fillStyle = '#b8b4ac';
+        ctx.beginPath();
+        ctx.arc(clockX, 130, 35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#4a4a4a';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.strokeStyle = '#2a2a2a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(clockX, 130);
+        ctx.lineTo(clockX, 110);
+        ctx.moveTo(clockX, 130);
+        ctx.lineTo(clockX - 15, 130);
+        ctx.stroke();
+    }
+
+    const winX = 1150 - emergencyX;
+    if (winX > -200 && winX < W + 200) {
+        const lightGrad = ctx.createRadialGradient(winX + 60, 170, 10, winX + 60, 170, 180);
+        lightGrad.addColorStop(0, 'rgba(220, 210, 180, 0.22)');
+        lightGrad.addColorStop(1, 'rgba(220, 210, 180, 0)');
+        ctx.fillStyle = lightGrad;
+        ctx.fillRect(winX - 120, 60, 360, 360);
+
+        ctx.fillStyle = '#a8a8b0';
+        ctx.fillRect(winX, 100, 120, 140);
+        ctx.strokeStyle = '#2a2a32';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(winX + 20, 100); ctx.lineTo(winX + 60, 180); ctx.lineTo(winX + 45, 240);
+        ctx.moveTo(winX + 90, 100); ctx.lineTo(winX + 65, 160); ctx.lineTo(winX + 100, 220);
+        ctx.stroke();
+        ctx.strokeStyle = '#3a3a42';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(winX, 100, 120, 140);
+    }
+
+    const cabinetX = 150 - emergencyX;
+    if (cabinetX > -200 && cabinetX < W + 200) {
+        ctx.fillStyle = '#5a5a62';
+        ctx.fillRect(cabinetX, EMERGENCY_GROUND_Y - 180, 100, 180);
+        ctx.fillStyle = '#3a3a42';
+        ctx.beginPath();
+        ctx.moveTo(cabinetX + 100, EMERGENCY_GROUND_Y - 180);
+        ctx.lineTo(cabinetX + 130, EMERGENCY_GROUND_Y - 170);
+        ctx.lineTo(cabinetX + 130, EMERGENCY_GROUND_Y - 10);
+        ctx.lineTo(cabinetX + 100, EMERGENCY_GROUND_Y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#2a2a32';
+        for (let i = 1; i < 4; i++) {
+            ctx.fillRect(cabinetX + 5, EMERGENCY_GROUND_Y - 180 + i * 45, 90, 3);
+        }
+    }
+
+    const floorGrad = ctx.createLinearGradient(0, EMERGENCY_GROUND_Y, 0, H);
+    floorGrad.addColorStop(0, '#8a847a');
+    floorGrad.addColorStop(0.5, '#7a746a');
+    floorGrad.addColorStop(1, '#5a544a');
+    ctx.fillStyle = floorGrad;
+    ctx.fillRect(0, EMERGENCY_GROUND_Y, W, H - EMERGENCY_GROUND_Y);
+
+    ctx.strokeStyle = 'rgba(50, 45, 40, 0.4)';
+    ctx.lineWidth = 1;
+    const floorOffset = emergencyX % 80;
+    for (let x = -floorOffset; x < W + 80; x += 80) {
+        ctx.beginPath();
+        ctx.moveTo(x, EMERGENCY_GROUND_Y);
+        ctx.lineTo(x - 25, H);
+        ctx.stroke();
+    }
+
+    ctx.strokeStyle = '#4a4038';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, EMERGENCY_GROUND_Y);
+    ctx.lineTo(W, EMERGENCY_GROUND_Y);
+    ctx.stroke();
+
+    const beds = [
+        { worldX: 450, flipped: false },
+        { worldX: 850, flipped: true },
+        { worldX: 1250, flipped: false }
+    ];
+    beds.forEach(bed => {
+        const bx = bed.worldX - emergencyX;
+        if (bx < -250 || bx > W + 250) return;
+        if (!bed.flipped) {
+            ctx.fillStyle = '#5a5a62';
+            ctx.fillRect(bx - 80, EMERGENCY_GROUND_Y - 60, 160, 8);
+            ctx.fillRect(bx - 75, EMERGENCY_GROUND_Y - 52, 5, 52);
+            ctx.fillRect(bx + 70, EMERGENCY_GROUND_Y - 52, 5, 52);
+            ctx.fillStyle = '#a8a4a0';
+            ctx.fillRect(bx - 75, EMERGENCY_GROUND_Y - 75, 150, 15);
+            ctx.fillStyle = '#b8b4ac';
+            ctx.beginPath();
+            ctx.ellipse(bx - 50, EMERGENCY_GROUND_Y - 78, 22, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(100, 25, 25, 0.5)';
+            ctx.beginPath();
+            ctx.ellipse(bx + 10, EMERGENCY_GROUND_Y - 72, 15, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = '#4a4a52';
+            ctx.fillRect(bx - 80, EMERGENCY_GROUND_Y - 20, 160, 8);
+            ctx.fillRect(bx - 60, EMERGENCY_GROUND_Y - 12, 5, 12);
+            ctx.fillRect(bx + 55, EMERGENCY_GROUND_Y - 12, 5, 12);
+            ctx.fillStyle = '#8a8680';
+            ctx.fillRect(bx - 40, EMERGENCY_GROUND_Y - 8, 120, 6);
+        }
+    });
+
+    const ventX = 620 - emergencyX;
+    if (ventX > -100 && ventX < W + 100) {
+        ctx.fillStyle = '#3a3a42';
+        ctx.fillRect(ventX, EMERGENCY_GROUND_Y - 20, 40, 20);
+        ctx.fillStyle = '#1a3a1a';
+        ctx.fillRect(ventX + 5, EMERGENCY_GROUND_Y - 18, 30, 12);
+        ctx.strokeStyle = '#5a7a5a';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(ventX + 8, EMERGENCY_GROUND_Y - 12);
+        ctx.lineTo(ventX + 12, EMERGENCY_GROUND_Y - 15);
+        ctx.lineTo(ventX + 16, EMERGENCY_GROUND_Y - 10);
+        ctx.lineTo(ventX + 22, EMERGENCY_GROUND_Y - 14);
+        ctx.lineTo(ventX + 28, EMERGENCY_GROUND_Y - 11);
+        ctx.lineTo(ventX + 33, EMERGENCY_GROUND_Y - 15);
+        ctx.stroke();
+    }
+
+    const receptionX = 550 - emergencyX;
+    if (receptionX > -250 && receptionX < W + 250) {
+        ctx.fillStyle = '#4a3a28';
+        ctx.fillRect(receptionX, EMERGENCY_GROUND_Y - 90, 200, 10);
+        ctx.fillRect(receptionX + 15, EMERGENCY_GROUND_Y - 80, 8, 80);
+        ctx.fillRect(receptionX + 180, EMERGENCY_GROUND_Y - 80, 8, 80);
+    }
+
+    const time = Date.now() / 1000;
+    hiddenFiles.forEach(f => {
+        if (f.collected) return;
+        const screenX = f.x - emergencyX;
+        const screenY = f.y;
+        if (screenX < -60 || screenX > W + 60) return;
+
+        const bob = Math.sin(time * 2 + f.bobPhase) * 2;
+        const finalY = screenY + bob;
+
+        const pulse = Math.sin(time * 3 + f.bobPhase) * 3;
+        const glow = ctx.createRadialGradient(screenX, finalY - 12, 3, screenX, finalY - 12, 22 + pulse);
+        glow.addColorStop(0, 'rgba(212, 175, 55, 0.5)');
+        glow.addColorStop(1, 'rgba(212, 175, 55, 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(screenX, finalY - 12, 22 + pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.save();
+        ctx.translate(screenX, finalY - 12);
+        ctx.rotate((f.id % 2 === 0) ? -0.15 : 0.15);
+
+        ctx.fillStyle = '#c8c0a8';
+        ctx.fillRect(-16, -22, 32, 26);
+        ctx.strokeStyle = '#7a6a52';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-16, -22, 32, 26);
+
+        ctx.fillStyle = 'rgba(50, 25, 10, 0.7)';
+        ctx.beginPath();
+        ctx.moveTo(-16, -22);
+        ctx.lineTo(-8, -16);
+        ctx.lineTo(-16, -10);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(80, 65, 50, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(-12, -15); ctx.lineTo(8, -15);
+        ctx.moveTo(-12, -9); ctx.lineTo(12, -9);
+        ctx.moveTo(-12, -3); ctx.lineTo(5, -3);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(140, 25, 25, 0.8)';
+        ctx.fillRect(6, -20, 6, 2.5);
+        ctx.fillRect(7.75, -21.25, 2.5, 6);
+
+        ctx.restore();
+    });
+
+    const doorX = (EMERGENCY_WIDTH - 250) - emergencyX;
+    if (doorX > -200 && doorX < W + 200) {
+        ctx.fillStyle = '#2a1a0a';
+        ctx.fillRect(doorX - 5, EMERGENCY_GROUND_Y - 220, 110, 220);
+        ctx.fillStyle = hospitalCompleted ? '#6a5a3a' : '#4a3a28';
+        ctx.fillRect(doorX, EMERGENCY_GROUND_Y - 215, 100, 215);
+    }
+}
+
+// ===================== مشهد التركيب =====================
+function drawPuzzleScene() {
+    ctx.fillStyle = '#0a0a10';
+    ctx.fillRect(0, 0, W, H);
+
+    const lg = ctx.createRadialGradient(W/2, H/2, 100, W/2, H/2, 500);
+    lg.addColorStop(0, 'rgba(60, 50, 40, 0.3)');
+    lg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#5a4a3a';
+    ctx.fillRect(BOARD_SCREEN_X - 10, BOARD_SCREEN_Y - 10, BOARD_SCREEN_W + 20, BOARD_SCREEN_H + 20);
+    ctx.fillStyle = '#3a2a1a';
+    ctx.fillRect(BOARD_SCREEN_X - 5, BOARD_SCREEN_Y - 5, BOARD_SCREEN_W + 10, BOARD_SCREEN_H + 10);
+
+    ctx.fillStyle = '#0a0a10';
+    ctx.fillRect(BOARD_SCREEN_X, BOARD_SCREEN_Y, BOARD_SCREEN_W, BOARD_SCREEN_H);
+
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            const x = BOARD_SCREEN_X + c * SLOT_W;
+            const y = BOARD_SCREEN_Y + r * SLOT_H;
+            const p = pieces.find(q => q.col === c && q.row === r);
+            if (p && p.placed) {
+                drawPicturePiece(ctx, x, y, SLOT_W, SLOT_H, c, r, 1);
+                ctx.strokeStyle = 'rgba(212, 175, 55, 0.7)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x + 1, y + 1, SLOT_W - 2, SLOT_H - 2);
+            } else {
+                ctx.fillStyle = 'rgba(30, 30, 40, 0.5)';
+                ctx.fillRect(x + 1, y + 1, SLOT_W - 2, SLOT_H - 2);
+                ctx.strokeStyle = 'rgba(212, 175, 55, 0.5)';
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(x + 1, y + 1, SLOT_W - 2, SLOT_H - 2);
+            }
+        }
+    }
+
+    ctx.fillStyle = 'rgba(20, 20, 25, 0.85)';
+    ctx.fillRect(STACK_X - 5, STACK_Y - 5, 6 * (STACK_PIECE_W + 8) + 10, 2 * (STACK_PIECE_H + 8) + 10);
+    ctx.strokeStyle = 'rgba(212, 175, 55, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(STACK_X - 5, STACK_Y - 5, 6 * (STACK_PIECE_W + 8) + 10, 2 * (STACK_PIECE_H + 8) + 10);
+
+    const unplaced = pieces.filter(p => p.collected && !p.placed);
+    unplaced.forEach((p, i) => {
+        if (draggingPiece && draggingPiece.piece === p) return;
+        const pos = getStackPos(i);
+        ctx.fillStyle = '#3a2a1a';
+        ctx.fillRect(pos.x - 2, pos.y - 2, STACK_PIECE_W + 4, STACK_PIECE_H + 4);
+        ctx.fillStyle = '#d4af37';
+        ctx.fillRect(pos.x - 1, pos.y - 1, STACK_PIECE_W + 2, STACK_PIECE_H + 2);
+        drawPicturePiece(ctx, pos.x, pos.y, STACK_PIECE_W, STACK_PIECE_H, p.col, p.row, 1);
+    });
+
+    if (draggingPiece) {
+        const p = draggingPiece.piece;
+        drawPicturePiece(ctx, draggingPiece.dragX, draggingPiece.dragY, STACK_PIECE_W, STACK_PIECE_H, p.col, p.row, 0.9);
+        ctx.strokeStyle = '#d4af37';
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(draggingPiece.dragX, draggingPiece.dragY, STACK_PIECE_W, STACK_PIECE_H);
+    }
+
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(t('house.puzzle.hint'), W/2, 45);
+
+    ctx.font = '22px "Segoe UI", Tahoma';
+    ctx.fillStyle = '#ccc';
+    ctx.fillText(t('house.puzzle.remaining') + ': ' + unplaced.length, W/2, H - 15);
+}
+
+// ===================== مشهد الرسالة =====================
+function drawMessageScene() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.94)';
+    ctx.fillRect(0, 0, W, H);
+
+    const lines = [
+        t('msg.house.1'), t('msg.house.2'), t('msg.house.3'), t('msg.house.4'),
+        t('msg.house.5'), t('msg.house.6'), t('msg.house.7')
+    ];
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 28px "Segoe UI", Tahoma';
+    ctx.fillText(t('msg.house.title'), W/2, 80);
+
+    ctx.font = '22px "Segoe UI", Tahoma';
+    ctx.fillStyle = '#e8e8e8';
+    lines.forEach((line, i) => {
+        ctx.fillText(line, W/2, 150 + i * 38);
+    });
+
+    const bw = 220, bh = 50;
+    messageButtonRect = { x: W/2 - bw/2, y: H - 70, w: bw, h: bh };
+    ctx.fillStyle = 'rgba(212, 175, 55, 0.2)';
+    ctx.fillRect(messageButtonRect.x, messageButtonRect.y, bw, bh);
+    ctx.strokeStyle = '#d4af37';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(messageButtonRect.x, messageButtonRect.y, bw, bh);
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';
+    ctx.fillText(t('ui.close'), W/2, messageButtonRect.y + 33);
+}
+
+// ===================== مشهد رسمة يوسف =====================
+function drawDrawingScene() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.94)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 28px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(t('school.drawing.title'), W/2, 60);
+
+    const dw = 500;
+    const dh = 340;
+    drawChildDrawing(W/2, H/2 - 10, dw, dh, 1);
+
+    const bw = 220, bh = 50;
+    drawingButtonRect = { x: W/2 - bw/2, y: H - 70, w: bw, h: bh };
+    ctx.fillStyle = 'rgba(212, 175, 55, 0.2)';
+    ctx.fillRect(drawingButtonRect.x, drawingButtonRect.y, bw, bh);
+    ctx.strokeStyle = '#d4af37';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(drawingButtonRect.x, drawingButtonRect.y, bw, bh);
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';
+    ctx.fillText(t('ui.close'), W/2, drawingButtonRect.y + 33);
+}
+
+// ===================== مشهد رسالة المعلمة =====================
+function drawTeacherLetterScene() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.94)';
+    ctx.fillRect(0, 0, W, H);
+
+    const lines = [];
+    for (let i = 1; i <= 11; i++) {
+        lines.push(t('msg.teacher.' + i));
+    }
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 28px "Segoe UI", Tahoma';
+    ctx.fillText(t('msg.teacher.title'), W/2, 55);
+
+    ctx.font = '22px "Segoe UI", Tahoma';
+    ctx.fillStyle = '#e8e8e8';
+    lines.forEach((line, i) => {
+        ctx.fillText(line, W/2, 105 + i * 32);
+    });
+
+    const bw = 220, bh = 50;
+    teacherLetterButtonRect = { x: W/2 - bw/2, y: H - 60, w: bw, h: bh };
+    ctx.fillStyle = 'rgba(212, 175, 55, 0.2)';
+    ctx.fillRect(teacherLetterButtonRect.x, teacherLetterButtonRect.y, bw, bh);
+    ctx.strokeStyle = '#d4af37';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(teacherLetterButtonRect.x, teacherLetterButtonRect.y, bw, bh);
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';
+    ctx.fillText(t('ui.close'), W/2, teacherLetterButtonRect.y + 33);
+}
+
+// ===================== رسم الشخصية =====================
+function drawCharacter(blurOffsetX, blurAlpha) {
+    const isMoving = player.isMoving;
+    const wc = player.walkCycle;
+    const bodyBob = isMoving ? Math.abs(Math.sin(wc)) * 2.2 : 0;
+    const sway = isMoving ? Math.sin(wc) * 1.8 : 0;
+    const breath = isMoving ? 0 : Math.sin(player.breathTime / 50) * 0.5;
+    const groundY = (currentScene === 'house') ? player.roomGroundY :
+                (currentScene === 'classroom' || currentScene === 'emergency') ? EMERGENCY_GROUND_Y :
+                player.groundY;
+    ctx.save();
+    ctx.globalAlpha = blurAlpha;
+    ctx.translate(player.x + blurOffsetX + sway * 0.3, groundY - bodyBob - breath);
+    ctx.scale(player.direction, 1);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 22, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#050505';
+    ctx.strokeStyle = '#050505';
+
+    ctx.save();
+    const robeSway = isMoving ? Math.sin(wc) * 3 : 0;
+    ctx.beginPath();
+    ctx.moveTo(-11, -95);
+    ctx.quadraticCurveTo(-15 + robeSway, -50, -13 + robeSway * 1.5, 5);
+    ctx.lineTo(13 + robeSway * 1.5, 5);
+    ctx.quadraticCurveTo(15 + robeSway, -50, 11, -95);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    drawLeg(-4, -58, wc + Math.PI, true);
+    drawLeg(4, -58, wc, false);
+
+    ctx.save();
+    ctx.translate(0, -98);
+    ctx.lineWidth = 22;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 44); ctx.stroke();
+    ctx.strokeStyle = 'rgba(212,175,55,0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-8, -5);
+    ctx.quadraticCurveTo(0, 5, 8, -5);
+    ctx.stroke();
+    ctx.restore();
+
+    drawArm(-5, -92, wc, true);
+
+    ctx.strokeStyle = '#050505';
+    ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(0, -102); ctx.lineTo(0, -112); ctx.stroke();
+
+    ctx.save();
+    ctx.translate(0, -126);
+    ctx.rotate(player.headTilt);
+    ctx.fillStyle = '#050505';
+    ctx.beginPath(); ctx.arc(0, 0, 14.5, 0, Math.PI * 2); ctx.fill();
+    if (!player.isBlinking) {
+        ctx.fillStyle = '#d4af37';
+        ctx.shadowColor = '#d4af37';
+        ctx.shadowBlur = 5;
+        ctx.fillRect(4, -3, 2.5, 1.5);
+        ctx.shadowBlur = 0;
+    }
+    ctx.restore();
+
+    drawArm(4, -92, wc, false);
+    ctx.restore();
+}
+
+function drawLeg(hipX, hipY, phase, isBack) {
+    const thighLen = 32, shinLen = 30;
+    const hipAngle = Math.sin(phase) * 0.5;
+    const kneeBend = Math.max(0, Math.sin(phase - 0.8)) * 0.85;
+    const kneeAngle = hipAngle - kneeBend;
+    const kneeX = hipX + Math.sin(hipAngle) * thighLen;
+    const kneeY = hipY + Math.cos(hipAngle) * thighLen;
+    const ankleX = kneeX + Math.sin(kneeAngle) * shinLen;
+    const ankleY = kneeY + Math.cos(kneeAngle) * shinLen;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#050505';
+    ctx.lineWidth = isBack ? 9.5 : 11.5;
+    ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(kneeX, kneeY); ctx.stroke();
+    ctx.lineWidth = isBack ? 7.5 : 9.5;
+    ctx.beginPath(); ctx.moveTo(kneeX, kneeY); ctx.lineTo(ankleX, ankleY); ctx.stroke();
+}
+
+function drawArm(shoulderX, shoulderY, phase, isBack) {
+    const uL = 22, fL = 20;
+    const aP = phase + Math.PI;
+    const sA = Math.sin(aP) * 0.4;
+    const eB = 0.5 + Math.max(0, Math.sin(aP + 0.3)) * 0.35;
+    const fA = sA - eB;
+    const eX = shoulderX + Math.sin(sA) * uL;
+    const eY = shoulderY + Math.cos(sA) * uL;
+    const hX = eX + Math.sin(fA) * fL;
+    const hY = eY + Math.cos(fA) * fL;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#050505';
+    ctx.lineWidth = isBack ? 5.5 : 6.5;
+    ctx.beginPath(); ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(eX, eY); ctx.stroke();
+    ctx.lineWidth = isBack ? 4.5 : 5.5;
+    ctx.beginPath(); ctx.moveTo(eX, eY); ctx.lineTo(hX, hY); ctx.stroke();
+}
+
+// ===================== خلفية الطريق =====================
+function drawRubblePile(cx, baseY, width, height, colorSeed, seed = 0) {
+    const rand = (i) => {
+        const x = Math.sin(seed + i * 12.9898) * 43758.5453;
+        return x - Math.floor(x);
+    };
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY + 3, width * 0.55, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const stones = 10;
+    for (let i = 0; i < stones; i++) {
+        const rx = cx - width/2 + rand(i) * width;
+        const ry = baseY - rand(i + 100) * height;
+        const sw = 20 + rand(i + 200) * 45;
+        const sh = 12 + rand(i + 300) * 28;
+        const rot = (rand(i + 400) - 0.5) * 1.2;
+        const shade = 90 + Math.floor(rand(i + 500) * 50);
+        ctx.save();
+        ctx.translate(rx, ry);
+        ctx.rotate(rot);
+        ctx.fillStyle = `rgb(${shade - 15}, ${shade - 20}, ${shade - 25})`;
+        ctx.beginPath();
+        const verts = 5 + Math.floor(rand(i + 600) * 2);
+        for (let v = 0; v < verts; v++) {
+            const a = (v / verts) * Math.PI * 2;
+            const r = 0.7 + rand(i * 10 + v) * 0.5;
+            const px = Math.cos(a) * (sw/2) * r;
+            const py = Math.sin(a) * (sh/2) * r;
+            if (v === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+function drawBurntTree(cx, baseY, scale = 1, seed = 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY + 2, 25 * scale, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#0a0806';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 8 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx, baseY);
+    ctx.lineTo(cx + 3 * scale, baseY - 60 * scale);
+    ctx.stroke();
+    ctx.lineWidth = 4 * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx + 1 * scale, baseY - 45 * scale);
+    ctx.quadraticCurveTo(cx - 25 * scale, baseY - 70 * scale, cx - 40 * scale, baseY - 95 * scale);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 2 * scale, baseY - 55 * scale);
+    ctx.quadraticCurveTo(cx + 28 * scale, baseY - 80 * scale, cx + 38 * scale, baseY - 105 * scale);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 3 * scale, baseY - 60 * scale);
+    ctx.quadraticCurveTo(cx + 5 * scale, baseY - 90 * scale, cx - 8 * scale, baseY - 115 * scale);
+    ctx.stroke();
+    ctx.lineWidth = 2 * scale;
+    const branches = [
+        [-40, -95, -55, -105], [-40, -95, -48, -115],
+        [38, -105, 55, -115], [38, -105, 45, -125],
+        [-8, -115, -18, -135], [-8, -115, 5, -140],
+        [-25, -70, -35, -78], [28, -80, 42, -88]
+    ];
+    branches.forEach(([x1, y1, x2, y2]) => {
+        ctx.beginPath();
+        ctx.moveTo(cx + x1 * scale, baseY + y1 * scale);
+        ctx.lineTo(cx + x2 * scale, baseY + y2 * scale);
+        ctx.stroke();
+    });
+}
+
+function drawTornBear(cx, cy, scale = 1) {
+    ctx.save();
+    ctx.translate(cx, cy); ctx.scale(scale, scale);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(0, 8, 22, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#5a4a38';
+    ctx.beginPath(); ctx.ellipse(0, 0, 16, 14, 0.15, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, -14, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-7, -21, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(7, -21, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#2a1f14'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-10, -5); ctx.lineTo(8, 5); ctx.stroke();
+    ctx.fillStyle = '#8a7f70';
+    ctx.beginPath(); ctx.arc(-4, -1, 2.5, 0, Math.PI * 2); ctx.arc(2, 2, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath(); ctx.arc(-3.5, -15, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#2a1f14'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(3.5, -15, 1.3, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#2a1f14';
+    ctx.beginPath(); ctx.arc(0, -11, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#5a4a38';
+    ctx.beginPath(); ctx.ellipse(14, 6, 4, 6, 0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#2a1f14'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(11, 4); ctx.lineTo(17, 8); ctx.stroke();
+    ctx.fillStyle = '#5a4a38';
+    ctx.beginPath(); ctx.ellipse(-8, 12, 3.5, 4, -0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+}
+
+function drawBurntCar(cx, cy, scale = 1, flip = false) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (flip) ctx.scale(-1, 1);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(0, 2, 58, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2a2622';
+    ctx.beginPath();
+    ctx.moveTo(-55, 0); ctx.lineTo(-52, -18); ctx.lineTo(-30, -22); ctx.lineTo(-15, -38);
+    ctx.lineTo(25, -38); ctx.lineTo(35, -22); ctx.lineTo(55, -18); ctx.lineTo(58, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#0a0602'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-58, 0); ctx.lineTo(58, 0); ctx.stroke();
+    ctx.fillStyle = '#1a1612';
+    ctx.beginPath();
+    ctx.moveTo(-15, -38); ctx.lineTo(25, -38); ctx.lineTo(30, -25); ctx.lineTo(-12, -25);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#0a0806';
+    ctx.beginPath(); ctx.ellipse(-15, -8, 8, 6, 0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(180, 70, 15, 0.5)';
+    ctx.beginPath();
+    ctx.arc(-13, -7, 2, 0, Math.PI * 2);
+    ctx.arc(-18, -9, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0a0806';
+    ctx.beginPath();
+    ctx.moveTo(35, -22); ctx.lineTo(55, -18); ctx.lineTo(55, -8); ctx.lineTo(38, -10);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-55, 1); ctx.lineTo(58, 1); ctx.stroke();
+    ctx.restore();
+}
+
+function drawBackground() {
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+    skyGrad.addColorStop(0,   '#4a4a52');
+    skyGrad.addColorStop(0.3, '#5a5a62');
+    skyGrad.addColorStop(0.6, '#6a6a72');
+    skyGrad.addColorStop(1,   '#4a4a52');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, GROUND_Y);
+
+    const hazeGrad = ctx.createLinearGradient(0, GROUND_Y - 220, 0, GROUND_Y);
+    hazeGrad.addColorStop(0, 'rgba(60, 60, 68, 0)');
+    hazeGrad.addColorStop(1, 'rgba(40, 40, 48, 0.85)');
+    ctx.fillStyle = hazeGrad;
+    ctx.fillRect(0, GROUND_Y - 220, W, 220);
+
+    const sunX = W * 0.72, sunY = 180;
+    const sunGrad = ctx.createRadialGradient(sunX, sunY, 5, sunX, sunY, 110);
+    sunGrad.addColorStop(0, 'rgba(180, 160, 130, 0.25)');
+    sunGrad.addColorStop(0.5, 'rgba(140, 120, 100, 0.15)');
+    sunGrad.addColorStop(1, 'rgba(140, 120, 100, 0)');
+    ctx.fillStyle = sunGrad;
+    ctx.beginPath(); ctx.arc(sunX, sunY, 110, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = 'rgba(50, 50, 55, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(W * 0.2, 100, 180, 40, 0, 0, Math.PI * 2);
+    ctx.ellipse(W * 0.8, 80, 160, 35, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const p1 = (worldX * 0.08) % 700;
+    ctx.fillStyle = '#5a5a62';
+    for (let i = -1; i < 3; i++) {
+        const bx = i * 700 - p1;
+        ctx.beginPath();
+        ctx.moveTo(bx, GROUND_Y - 20);
+        ctx.lineTo(bx + 60, GROUND_Y - 55);
+        ctx.lineTo(bx + 140, GROUND_Y - 35);
+        ctx.lineTo(bx + 220, GROUND_Y - 70);
+        ctx.lineTo(bx + 320, GROUND_Y - 40);
+        ctx.lineTo(bx + 420, GROUND_Y - 60);
+        ctx.lineTo(bx + 520, GROUND_Y - 30);
+        ctx.lineTo(bx + 600, GROUND_Y - 50);
+        ctx.lineTo(bx + 700, GROUND_Y - 25);
+        ctx.lineTo(bx + 700, GROUND_Y + 5);
+        ctx.lineTo(bx, GROUND_Y + 5);
+        ctx.closePath(); ctx.fill();
+    }
+
+    const p2 = (worldX * 0.35) % 900;
+    for (let i = -1; i < 3; i++) drawMidRubbleLayer(i * 900 - p2, i);
+
+    const p3 = (worldX * 0.75) % 1100;
+    for (let i = -1; i < 3; i++) drawNearRubbleLayer(i * 1100 - p3, i);
+}
+
+function drawMidRubbleLayer(offset, seed) {
+    ctx.fillStyle = '#5a5a62';
+    ctx.beginPath();
+    ctx.moveTo(offset, GROUND_Y);
+    ctx.lineTo(offset, GROUND_Y - 110);
+    ctx.lineTo(offset + 40, GROUND_Y - 130);
+    ctx.lineTo(offset + 90, GROUND_Y - 105);
+    ctx.lineTo(offset + 140, GROUND_Y - 120);
+    ctx.lineTo(offset + 180, GROUND_Y - 85);
+    ctx.lineTo(offset + 180, GROUND_Y);
+    ctx.closePath(); ctx.fill();
+
+    ctx.fillStyle = '#1a1a22';
+    ctx.fillRect(offset + 25, GROUND_Y - 90, 22, 32);
+    ctx.fillRect(offset + 70, GROUND_Y - 85, 26, 28);
+    ctx.fillRect(offset + 125, GROUND_Y - 80, 20, 30);
+
+    drawRubblePile(offset + 200, GROUND_Y, 90, 25, seed, seed * 7 + 3);
+    drawBurntTree(offset + 330, GROUND_Y, 0.85, seed * 11 + 5);
+
+    ctx.fillStyle = '#4a4a52';
+    ctx.beginPath();
+    ctx.moveTo(offset + 420, GROUND_Y);
+    ctx.lineTo(offset + 420, GROUND_Y - 95);
+    ctx.lineTo(offset + 470, GROUND_Y - 115);
+    ctx.lineTo(offset + 520, GROUND_Y - 90);
+    ctx.lineTo(offset + 570, GROUND_Y - 105);
+    ctx.lineTo(offset + 610, GROUND_Y - 70);
+    ctx.lineTo(offset + 610, GROUND_Y);
+    ctx.closePath(); ctx.fill();
+
+    ctx.fillStyle = '#1a1a22';
+    ctx.fillRect(offset + 445, GROUND_Y - 75, 22, 30);
+    ctx.fillRect(offset + 495, GROUND_Y - 70, 24, 28);
+    ctx.fillRect(offset + 555, GROUND_Y - 60, 20, 25);
+
+    drawRubblePile(offset + 660, GROUND_Y, 110, 30, seed, seed * 13 + 8);
+}
+
+function drawNearRubbleLayer(offset, seed) {
+    drawBurntCar(offset + 120, GROUND_Y, 1.0, false);
+    drawRubblePile(offset + 300, GROUND_Y, 180, 55, seed, seed * 23 + 11);
+    drawTornBear(offset + 420, GROUND_Y - 8, 1.0);
+    drawBurntTree(offset + 580, GROUND_Y, 1.3, seed * 31 + 17);
+    drawBurntCar(offset + 780, GROUND_Y, 0.9, true);
+    drawRubblePile(offset + 900, GROUND_Y, 120, 40, seed, seed * 41 + 23);
+}
+
+function drawGround() {
+    const groundGrad = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+    groundGrad.addColorStop(0, '#6a645c');
+    groundGrad.addColorStop(0.3, '#5a544c');
+    groundGrad.addColorStop(1, '#3a342c');
+    ctx.fillStyle = groundGrad;
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+    ctx.strokeStyle = '#3a342c';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y); ctx.lineTo(W, GROUND_Y);
+    ctx.stroke();
+}
+
+// ===================== تحديث =====================
+function updateRoad() {
+    if (moveForward) player.vx += player.acceleration;
+    else if (moveBack) player.vx -= player.acceleration;
+    else { player.vx *= player.friction; if (Math.abs(player.vx) < 0.01) player.vx = 0; }
+    player.vx = Math.max(-player.maxSpeed, Math.min(player.maxSpeed, player.vx));
+    if (player.vx > 0.05) player.direction = 1;
+    else if (player.vx < -0.05) player.direction = -1;
+
+    player.isMoving = Math.abs(player.vx) > 0.05;
+    player.walkCycle += Math.abs(player.vx) * 0.06;
+    if (player.isMoving) worldX += player.vx;
+    if (worldX < 0) worldX = 0;
+
+    player.blinkTimer++;
+    if (!player.isBlinking && player.blinkTimer >= player.nextBlinkTime) {
+        player.isBlinking = true; player.blinkTimer = 0;
+        player.nextBlinkTime = 100 + Math.random() * 150;
+    } else if (player.isBlinking && player.blinkTimer > 10) {
+        player.isBlinking = false; player.blinkTimer = 0;
+    }
+
+    if (!houseCompleted && !houseEnteredFlag) {
+        const hs = HOUSE_WORLD_X - worldX;
+        if (player.x + 30 > hs + 80 && player.x + 30 < hs + 120 && player.direction === 1) {
+            houseEnteredFlag = true;
+            startTransition('house', () => {
+                player.x = 200;
+                worldX = 100;
+                roomX = worldX;
+                roadSoundsPaused = true;
+                updateTopTextForHouse();
+            });
+        }
+    }
+
+    if (houseCompleted && !schoolCompleted && !schoolEnteredFlag) {
+        const ss = SCHOOL_WORLD_X - worldX;
+        const openDoorX = ss + 20 + SCHOOL_OPEN_DOOR * ((SCHOOL_WIDTH - 40) / SCHOOL_DOORS_COUNT);
+        if (player.x + 30 > openDoorX && player.x + 30 < openDoorX + 45 && player.direction === 1) {
+            schoolEnteredFlag = true;
+            startTransition('classroom', () => {
+                player.x = 480;
+                classroomX = 0;
+                roadSoundsPaused = true;
+                storyBox.innerText = t('school.entered');
+                updateTopTextForSchool();
+            });
+        }
+    }
+
+    if (schoolCompleted && !hospitalCompleted && !hospitalEnteredFlag) {
+        const hs = HOSPITAL_WORLD_X - worldX;
+        const openDoorX = hs + HOSPITAL_WIDTH / 2 - 30;
+        if (player.x + 30 > openDoorX && player.x + 30 < openDoorX + 60 && player.direction === 1) {
+            hospitalEnteredFlag = true;
+            startTransition('emergency', () => {
+                player.x = 480;
+                emergencyX = 0;
+                roadSoundsPaused = true;
+                storyBox.innerText = t('hospital.entered');
+                updateTopTextForHospital();
+            });
+        }
+    }
+
+    ashes.forEach(p => {
+        p.x += p.speedX - player.vx * 0.2;
+        p.y += p.speedY;
+        if (p.y < 0) { p.y = H; p.x = Math.random() * W; }
+        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+    });
+    smokePuffs.forEach(s => {
+        s.y += s.speedY; s.x += s.speedX - player.vx * 0.15;
+        s.size += s.grow; s.life -= 0.002;
+        if (s.life <= 0 || s.y < -s.size || s.x < -s.size || s.x > W + s.size) {
+            s.x = Math.random() * W; s.y = 380 + Math.random() * 60;
+            s.size = 40 + Math.random() * 70; s.life = 0.3 + Math.random() * 0.7;
+            s.alpha = 0.1 + Math.random() * 0.1;
+        }
+    });
+
+    windStreaks.forEach(w => {
+        w.x += w.speed;
+        if (w.x > W + w.length) {
+            w.x = -w.length;
+            w.y = Math.random() * H;
+        }
+    });
+    floatingDebris.forEach(d => {
+        d.x += d.speedX;
+        d.y += d.speedY + Math.sin(Date.now() / 500 + d.rot) * 0.2;
+        d.rot += d.rotSpeed;
+        if (d.x > W + 20) {
+            d.x = -20;
+            d.y = Math.random() * (GROUND_Y - 100);
+        }
+    });
+
+    lightningTimer++;
+    if (!lightningActive && lightningTimer > 300 + Math.random() * 400) {
+        lightningActive = true;
+        lightningAlpha = 0.85;
+        lightningTimer = 0;
+        playThunder();
+    }
+    if (lightningActive) {
+        lightningAlpha -= 0.06;
+        if (lightningAlpha <= 0) {
+            lightningActive = false;
+            lightningAlpha = 0;
+        }
+    }
+
+    player.breathTime++;
+
+    memories.forEach(m => {
+        if (!m.collected) {
+            const dist = Math.abs((player.x + worldX) - m.x);
+            if (dist < 45) {
+                m.collected = true;
+                memoriesCollected++;
+                playSnap();
+                storyBox.innerText = t(m.key);
+                if (memoriesCollected === 10) {
+                    setTimeout(() => {
+                        storyBox.innerText = t('mem.all');
+                    }, 1500);
+                }
+            }
+        }
+    });
+}
+
+let houseEnteredFlag = false;
+
+function updateHouse() {
+    if (moveForward) player.vx += player.acceleration;
+    else if (moveBack) player.vx -= player.acceleration;
+    else { player.vx *= player.friction; if (Math.abs(player.vx) < 0.01) player.vx = 0; }
+    player.vx = Math.max(-player.maxSpeed, Math.min(player.maxSpeed, player.vx));
+    if (player.vx > 0.05) player.direction = 1;
+    else if (player.vx < -0.05) player.direction = -1;
+
+    player.isMoving = Math.abs(player.vx) > 0.05;
+    player.walkCycle += Math.abs(player.vx) * 0.06;
+    player.x += player.vx;
+
+    const camMinX = 150;
+    const camMaxX = W - 150;
+
+    if (player.x > camMaxX) {
+        const diff = player.x - camMaxX;
+        player.x = camMaxX;
+        worldX += diff;
+    }
+    if (player.x < camMinX) {
+        const diff = camMinX - player.x;
+        player.x = camMinX;
+        worldX -= diff;
+    }
+    if (worldX < 0) {
+        worldX = 0;
+        if (player.x < camMinX) player.x = camMinX;
+    }
+    const maxWX = ROOM_WIDTH - W;
+    if (worldX > maxWX) {
+        worldX = maxWX;
+        if (player.x > camMaxX) player.x = camMaxX;
+    }
+    roomX = worldX;
+
+    player.blinkTimer++;
+    if (!player.isBlinking && player.blinkTimer >= player.nextBlinkTime) {
+        player.isBlinking = true; player.blinkTimer = 0;
+        player.nextBlinkTime = 100 + Math.random() * 150;
+    } else if (player.isBlinking && player.blinkTimer > 10) {
+        player.isBlinking = false; player.blinkTimer = 0;
+    }
+
+    if (keyDropped && !keyPosition.collected && !hasKey) {
+        const playerWorldX = worldX + player.x;
+        if (Math.abs(playerWorldX - keyPosition.x) < 60) {
+            keyPosition.collected = true;
+            hasKey = true;
+            playKeySound();
+            storyBox.innerText = t('house.key.taken');
+            setTimeout(() => {
+                startTransition('message', () => {
+                    messageOpen = true;
+                });
+            }, 1200);
+        }
+    }
+
+    if (hasKey && !houseCompleted && !messageOpen) {
+        const playerWorldX = worldX + player.x;
+        const doorWorldX = ROOM_WIDTH - 200;
+        if (Math.abs(playerWorldX - doorWorldX) < 80) {
+            houseCompleted = true;
+            storyBox.innerText = t('house.exited');
+            startTransition('road', () => {
+                worldX = HOUSE_WORLD_X + HOUSE_WIDTH + 50 - 480;
+                if (worldX < 0) worldX = 0;
+                player.x = 480;
+                roadSoundsPaused = false;
+                storyBox.innerText = t('house.completed');
+            });
+        }
+    }
+
+    if (piecesCollected === TOTAL_PIECES && !puzzleSolved && currentScene === 'house') {
+        const playerWorldX = worldX + player.x;
+        const boardCenterWorldX = BOARD_ROOM_X + PIC_W / 2;
+        if (Math.abs(playerWorldX - boardCenterWorldX) < 120) {
+            startTransition('puzzle', () => {});
+        }
+    }
+
+    player.breathTime++;
+}
+
+function updateSchool() {
+    if (moveForward) player.vx += player.acceleration;
+    else if (moveBack) player.vx -= player.acceleration;
+    else { player.vx *= player.friction; if (Math.abs(player.vx) < 0.01) player.vx = 0; }
+    player.vx = Math.max(-player.maxSpeed, Math.min(player.maxSpeed, player.vx));
+    if (player.vx > 0.05) player.direction = 1;
+    else if (player.vx < -0.05) player.direction = -1;
+
+    player.isMoving = Math.abs(player.vx) > 0.05;
+    player.walkCycle += Math.abs(player.vx) * 0.06;
+    player.x += player.vx;
+
+    const camMinX = 150;
+    const camMaxX = W - 150;
+
+    if (player.x > camMaxX) {
+        const diff = player.x - camMaxX;
+        player.x = camMaxX;
+        classroomX += diff;
+    }
+    if (player.x < camMinX) {
+        const diff = camMinX - player.x;
+        player.x = camMinX;
+        classroomX -= diff;
+    }
+    if (classroomX < 0) {
+        classroomX = 0;
+        if (player.x < camMinX) player.x = camMinX;
+    }
+    const maxCX = CLASSROOM_WIDTH - W;
+    if (classroomX > maxCX) {
+        classroomX = maxCX;
+        if (player.x > camMaxX) player.x = camMaxX;
+    }
+
+    player.blinkTimer++;
+    if (!player.isBlinking && player.blinkTimer >= player.nextBlinkTime) {
+        player.isBlinking = true; player.blinkTimer = 0;
+        player.nextBlinkTime = 100 + Math.random() * 150;
+    } else if (player.isBlinking && player.blinkTimer > 10) {
+        player.isBlinking = false; player.blinkTimer = 0;
+    }
+
+    if (!yusufNotebookFound) permanentHint = t('school.hint.1');
+    else if (yusufNotebookFound && !teacherLetterVisible) permanentHint = t('school.hint.2');
+    else if (teacherLetterVisible && !teacherLetterOpen && !schoolCompleted) permanentHint = t('school.hint.3');
+    else if (schoolCompleted) permanentHint = t('school.hint.4');
+
+    if (schoolCompleted) {
+        const doorWorldX = CLASSROOM_WIDTH - 200;
+        const playerWorldX = classroomX + player.x;
+        if (Math.abs(playerWorldX - doorWorldX) < 80) {
+            storyBox.innerText = t('school.exited');
+            startTransition('road', () => {
+                worldX = SCHOOL_WORLD_X + SCHOOL_WIDTH + 50 - 480;
+                if (worldX < 0) worldX = 0;
+                player.x = 480;
+                roadSoundsPaused = false;
+                storyBox.innerText = t('school.completed');
+                memories[2].x = SCHOOL_WORLD_X + 800;
+            });
+        }
+    }
+
+    player.breathTime++;
+}
+
+function updateEmergency() {
+    if (moveForward) player.vx += player.acceleration;
+    else if (moveBack) player.vx -= player.acceleration;
+    else { player.vx *= player.friction; if (Math.abs(player.vx) < 0.01) player.vx = 0; }
+    player.vx = Math.max(-player.maxSpeed, Math.min(player.maxSpeed, player.vx));
+    if (player.vx > 0.05) player.direction = 1;
+    else if (player.vx < -0.05) player.direction = -1;
+
+    player.isMoving = Math.abs(player.vx) > 0.05;
+    player.walkCycle += Math.abs(player.vx) * 0.06;
+    player.x += player.vx;
+
+    const camMinX = 150;
+    const camMaxX = W - 150;
+
+    if (player.x > camMaxX) {
+        const diff = player.x - camMaxX;
+        player.x = camMaxX;
+        emergencyX += diff;
+    }
+    if (player.x < camMinX) {
+        const diff = camMinX - player.x;
+        player.x = camMinX;
+        emergencyX -= diff;
+    }
+    if (emergencyX < 0) {
+        emergencyX = 0;
+        if (player.x < camMinX) player.x = camMinX;
+    }
+    const maxEX = EMERGENCY_WIDTH - W;
+    if (emergencyX > maxEX) {
+        emergencyX = maxEX;
+        if (player.x > camMaxX) player.x = camMaxX;
+    }
+
+    player.blinkTimer++;
+    if (!player.isBlinking && player.blinkTimer >= player.nextBlinkTime) {
+        player.isBlinking = true; player.blinkTimer = 0;
+        player.nextBlinkTime = 100 + Math.random() * 150;
+    } else if (player.isBlinking && player.blinkTimer > 10) {
+        player.isBlinking = false; player.blinkTimer = 0;
+    }
+
+    const remaining = 5 - collectedFiles.filter(c => c).length;
+    if (remaining > 0) permanentHint = t('hospital.hint.hidden') + ' (' + t('hospital.hint.remaining') + ': ' + remaining + ')';
+    else if (remaining === 0 && !hospitalCompleted) permanentHint = "";
+
+    player.breathTime++;
+}
+
+function update() {
+    updateTransition();
+    updateTopText();
+    if (currentScene === 'languageselection') return;
+    if (currentScene === 'road') updateRoad();
+    else if (currentScene === 'house') updateHouse();
+    else if (currentScene === 'classroom') updateSchool();
+    else if (currentScene === 'emergency') updateEmergency();
+    else if (currentScene === 'ending') {
+        if (!gameFinished) endingTimer++;
+    }
+}
+
+// ===================== رسم =====================
+function drawTopText() {
+    if (topText.alpha < 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = topText.alpha;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(W/2 - 280, 15, 560, 52);
+    ctx.strokeStyle = 'rgba(212, 175, 55, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(W/2 - 280, 15, 560, 52);
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(topText.text, W/2, 48);
+    ctx.restore();
+}
+
+function drawPermanentHint() {
+    if (!permanentHint) return;
+    if (currentScene !== 'house' && currentScene !== 'classroom' && currentScene !== 'emergency') return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(W/2 - 300, 78, 600, 46);
+    ctx.strokeStyle = 'rgba(212, 175, 55, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(W/2 - 300, 78, 600, 46);
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 22px "Segoe UI", Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillText(permanentHint, W/2, 110);
+    ctx.restore();
+}
+
+function drawKeyIndicator() {
+    if (!hasKey) return;
+    ctx.save();
+    ctx.translate(30, 30);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#d4af37';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#d4af37';
+    ctx.beginPath(); ctx.arc(0, -4, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(-1.5, -1, 3, 12);
+    ctx.fillRect(1.5, 6, 4, 2);
+    ctx.fillRect(1.5, 10, 4, 2);
+    ctx.restore();
+}
+
+function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    if (currentScene === 'languageselection') {
+        drawLanguageSelectionScreen();
+    }
+    else if (currentScene === 'road') {
+        drawBackground();
+
+        if (lightningActive && lightningAlpha > 0) {
+            ctx.fillStyle = `rgba(200, 210, 240, ${lightningAlpha * 0.25})`;
+            ctx.fillRect(0, 0, W, GROUND_Y);
+            ctx.strokeStyle = `rgba(220, 230, 255, ${lightningAlpha})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            const lx = W * 0.35;
+            ctx.moveTo(lx, 0);
+            ctx.lineTo(lx + 15, 80);
+            ctx.lineTo(lx - 10, 140);
+            ctx.lineTo(lx + 20, 220);
+            ctx.stroke();
+        }
+
+        windStreaks.forEach(w => {
+            ctx.strokeStyle = `rgba(180, 180, 190, ${w.alpha})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(w.x, w.y);
+            ctx.lineTo(w.x + w.length, w.y + 3);
+            ctx.stroke();
+        });
+
+        ashes.forEach(p => {
+            ctx.fillStyle = p.isEmber
+                ? `rgba(255, 140, 40, ${p.alpha})`
+                : `rgba(80, 80, 88, ${p.alpha})`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+        });
+
+        smokePuffs.forEach(s => {
+            const a = s.alpha * s.life;
+            const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.size);
+            grad.addColorStop(0, `rgba(80, 80, 88, ${a})`);
+            grad.addColorStop(0.5, `rgba(70, 70, 78, ${a * 0.5})`);
+            grad.addColorStop(1, 'rgba(70, 70, 78, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2); ctx.fill();
+        });
+
+        floatingDebris.forEach(d => {
+            ctx.save();
+            ctx.translate(d.x, d.y);
+            ctx.rotate(d.rot);
+            ctx.fillStyle = `rgba(120, 110, 100, ${d.alpha})`;
+            ctx.fillRect(-d.size/2, -d.size/2, d.size, d.size);
+            ctx.restore();
+        });
+
+        drawGround();
+
+        const hs = HOUSE_WORLD_X - worldX;
+        if (hs > -300 && hs < W + 300) drawHouseExterior(hs, GROUND_Y);
+
+        const ss = SCHOOL_WORLD_X - worldX;
+        if (ss > -500 && ss < W + 500) drawSchoolExterior(ss, GROUND_Y);
+
+        const hsp = HOSPITAL_WORLD_X - worldX;
+        if (hsp > -500 && hsp < W + 500) drawHospitalExterior(hsp, GROUND_Y);
+
+        memories.forEach(m => {
+            const sx = m.x - worldX;
+            if (!m.collected && sx > -60 && sx < W + 60) {
+                const pulse = Math.sin(Date.now() / 180) * 4;
+                const glow = ctx.createRadialGradient(sx, m.y, 2, sx, m.y, 20 + pulse);
+                glow.addColorStop(0, 'rgba(212,175,55,1)');
+                glow.addColorStop(0.4, 'rgba(255,200,80,0.5)');
+                glow.addColorStop(1, 'rgba(212,175,55,0)');
+                ctx.fillStyle = glow;
+                ctx.beginPath(); ctx.arc(sx, m.y, 20 + pulse, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(sx, m.y, 4, 0, Math.PI * 2); ctx.fill();
+            }
+        });
+
+        const camShake = player.isMoving ? Math.sin(player.walkCycle * 0.4) * 0.3 : 0;
+        if (player.isMoving) drawCharacter(-player.vx * 1.8 + camShake, 0.18);
+        drawCharacter(camShake, 1.0);
+    }
+    else if (currentScene === 'house') {
+        drawRoomInterior();
+        const camShake = player.isMoving ? Math.sin(player.walkCycle * 0.4) * 0.3 : 0;
+        if (player.isMoving) drawCharacter(-player.vx * 1.8 + camShake, 0.18);
+        drawCharacter(camShake, 1.0);
+        drawPermanentHint();
+        drawKeyIndicator();
+    }
+    else if (currentScene === 'puzzle') drawPuzzleScene();
+    else if (currentScene === 'message') drawMessageScene();
+    else if (currentScene === 'classroom') {
+        drawClassroomInterior();
+        const camShake = player.isMoving ? Math.sin(player.walkCycle * 0.4) * 0.3 : 0;
+        if (player.isMoving) drawCharacter(-player.vx * 1.8 + camShake, 0.18);
+        drawCharacter(camShake, 1.0);
+        drawPermanentHint();
+    }
+    else if (currentScene === 'drawing') drawDrawingScene();
+    else if (currentScene === 'letter') drawTeacherLetterScene();
+    else if (currentScene === 'emergency') {
+        drawEmergencyRoom();
+        const camShake = player.isMoving ? Math.sin(player.walkCycle * 0.4) * 0.3 : 0;
+        if (player.isMoving) drawCharacter(-player.vx * 1.8 + camShake, 0.18);
+        drawCharacter(camShake, 1.0);
+        drawPermanentHint();
+    }
+    else if (currentScene === 'file') drawFileScene();
+    else if (currentScene === 'motherletter') drawMotherLetterScene();
+    else if (currentScene === 'ending') drawEndingScene();
+
+    if (currentScene !== 'languageselection' && currentScene !== 'file' && currentScene !== 'motherletter' && currentScene !== 'ending') {
+        drawTopText();
+    }
+
+    if (transitionAlpha > 0.001) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${transitionAlpha})`;
+        ctx.fillRect(0, 0, W, H);
+    }
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// تهيئة أولية: ابدأ بشاشة اختيار اللغة
+storyBox.innerText = '';
+updateLangSwitchVisibility();
+
+// ربط زر تبديل اللغة
+document.getElementById('langSwitchBtn').addEventListener('click', () => {
+    toggleLanguage();
+});
+
+gameLoop();
+</script>
+</body>
+</html>

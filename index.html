@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>غزة: أطياف الرماد والصمود — القصف</title>
+<!-- Font Awesome 6 CDN -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+    html, body {
+        width: 100%; height: 100%;
+        background: #000;
+        overflow: hidden;
+        font-family: 'Segoe UI', Tahoma, sans-serif;
+        color: #e0e0e0;
+        touch-action: manipulation;
+    }
+    body {
+        display: flex; justify-content: center; align-items: center;
+        position: relative;
+    }
+    #strikeCanvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        max-width: 100vw;
+        max-height: 100vh;
+        object-fit: contain;
+        background: #000;
+        cursor: pointer;
+    }
+</style>
+</head>
+<body>
+
+<canvas id="strikeCanvas" width="1280" height="720"></canvas>
+
+<script>
+// ===================== الإعداد =====================
+const canvas = document.getElementById('strikeCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+const GROUND_Y = H - 100;
+
+// ===================== الحالة =====================
+let phase = 'welcome'; // 'welcome' | 'strike' | 'end'
+let iconState = 'idle'; // 'idle' | 'exiting' | 'fading' | 'done'
+let iconActionStart = 0;
+const iconExitDuration = 700;
+const iconFadeDuration = 800;
+let welcomeStart = Date.now();
+
+// ===================== نهاية المقدمة → الانتقال للعبة =====================
+let gameFadeAlpha = 0;          // 0 → 1
+let gameFadeStart = 0;
+let gameFadeActive = false;
+const GAME_FADE_DURATION = 2000; // 2 ثانية
+let gameRedirected = false;
+
+// ===================== شرار =====================
+const welcomeEmbers = [];
+function initWelcomeEmbers() {
+    welcomeEmbers.length = 0;
+    for (let i = 0; i < 40; i++) {
+        welcomeEmbers.push(spawnWelcomeEmber(Math.random() * H));
+    }
+}
+function spawnWelcomeEmber(startY) {
+    return {
+        x: Math.random() * W,
+        y: startY !== undefined ? startY : H + Math.random() * 100,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: -0.4 - Math.random() * 0.8,
+        size: 1 + Math.random() * 2.2,
+        alpha: 0.3 + Math.random() * 0.6,
+        life: 1,
+        decay: 0.002 + Math.random() * 0.004
+    };
+}
+initWelcomeEmbers();
+
+function updateWelcomeEmbers() {
+    for (let i = welcomeEmbers.length - 1; i >= 0; i--) {
+        const e = welcomeEmbers[i];
+        e.x += e.vx;
+        e.y += e.vy;
+        e.life -= e.decay;
+        if (e.life <= 0 || e.y < -50) {
+            welcomeEmbers[i] = spawnWelcomeEmber();
+        }
+    }
+}
+
+function drawWelcomeEmbers() {
+    welcomeEmbers.forEach(e => {
+        const a = e.alpha * e.life;
+        const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.size * 4);
+        grad.addColorStop(0, `rgba(255, 255, 255, ${a})`);
+        grad.addColorStop(0.4, `rgba(255, 255, 255, ${a * 0.4})`);
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.size * 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(255, 255, 255, ${a})`;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+// ===================== رسم أيقونة Font Awesome =====================
+function drawFontAwesomeIcon(unicode, cx, cy, fontSize, color, rotation) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (rotation) ctx.rotate(rotation);
+    ctx.font = `900 ${fontSize}px "Font Awesome 6 Free"`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = color;
+    ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
+    ctx.shadowBlur = 12;
+    ctx.fillText(unicode, 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+}
+
+// ===================== شاشة الترحيب / النهاية =====================
+const ICON_CENTER_X = W / 2;
+const ICON_CENTER_Y = H / 2;
+const ICON_SIZE = 200;
+
+function drawWelcomeScreen() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    updateWelcomeEmbers();
+    drawWelcomeEmbers();
+
+    const now = Date.now();
+    const elapsed = now - welcomeStart;
+
+    let iconAlpha = 1;
+    let iconX = ICON_CENTER_X;
+    let iconY = ICON_CENTER_Y;
+    let rotation = 0;
+
+    // ===== طائرة ورقية (fa-paper-plane) =====
+    if (phase === 'welcome') {
+        if (iconState === 'idle') {
+            rotation = Math.sin(elapsed / 380) * 0.08;
+            iconY += Math.sin(elapsed / 550) * 6;
+            iconX += Math.cos(elapsed / 480) * 4;
+        } else if (iconState === 'exiting') {
+            const p = Math.min(1, (now - iconActionStart) / iconExitDuration);
+            const eased = p * p;
+            iconX = ICON_CENTER_X + eased * (W + 300);
+            iconY = ICON_CENTER_Y - eased * 40;
+            iconAlpha = 1 - p;
+            rotation = (1 - p) * Math.sin(elapsed / 100) * 0.08;
+        } else if (iconState === 'done') {
+            iconAlpha = 0;
+        }
+        if (iconAlpha > 0.01) {
+            ctx.globalAlpha = iconAlpha;
+            drawFontAwesomeIcon('\uf1d8', iconX, iconY, ICON_SIZE, '#ffffff', rotation);
+            ctx.globalAlpha = 1;
+        }
+    }
+    // ===== غصن زيتون (fa-leaf) =====
+    else if (phase === 'end') {
+        if (iconState === 'idle') {
+            // ثابت
+        } else if (iconState === 'fading') {
+            const p = Math.min(1, (now - iconActionStart) / iconFadeDuration);
+            iconAlpha = 1 - p;
+        } else if (iconState === 'done') {
+            iconAlpha = 0;
+        }
+        if (iconAlpha > 0.01) {
+            ctx.globalAlpha = iconAlpha;
+            drawFontAwesomeIcon('\uf06c', iconX, iconY, ICON_SIZE, '#ffffff', 0);
+            ctx.globalAlpha = 1;
+        }
+    }
+}
+
+// ===================== الصوت =====================
+let audioCtx = null;
+let noiseBuffer = null;
+let isAudioActive = false;
+let activeNodes = [];
+
+function initAudio() {
+    if (audioCtx) return;
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const len = audioCtx.sampleRate * 2;
+        const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+        noiseBuffer = buf;
+        isAudioActive = true;
+    } catch(e) {}
+}
+
+function resumeAudio() {
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().then(() => { isAudioActive = true; }).catch(() => {});
+    } else if (audioCtx) {
+        isAudioActive = true;
+    }
+}
+
+function playPlaneDrone(startDelay) {
+    if (!audioCtx || !isAudioActive) return;
+    try {
+        const now = audioCtx.currentTime + (startDelay || 0);
+        const duration = 12;
+        const freqs = [80, 120];
+        freqs.forEach((baseFreq, k) => {
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(baseFreq, now);
+            osc.frequency.linearRampToValueAtTime(baseFreq * 1.1, now + duration * 0.5);
+            osc.frequency.linearRampToValueAtTime(baseFreq * 0.9, now + duration);
+            const filt = audioCtx.createBiquadFilter();
+            filt.type = 'lowpass';
+            filt.frequency.setValueAtTime(350, now);
+            filt.frequency.linearRampToValueAtTime(600, now + duration * 0.5);
+            filt.frequency.linearRampToValueAtTime(300, now + duration);
+            filt.Q.value = 0.8;
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.018 - k * 0.005, now + 0.5);
+            gain.gain.setValueAtTime(0.018 - k * 0.005, now + duration * 0.7);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+            osc.connect(filt); filt.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(now); osc.stop(now + duration);
+            activeNodes.push(osc);
+        });
+    } catch(e) {}
+}
+
+function playExplosion(intensity) {
+    if (!audioCtx || !isAudioActive) return;
+    try {
+        const now = audioCtx.currentTime;
+        const duration = 0.9 + Math.random() * 0.6;
+        const vol = 0.06 + (intensity || 1) * 0.04;
+
+        const src = audioCtx.createBufferSource();
+        src.buffer = noiseBuffer;
+        src.loop = true;
+        const filt = audioCtx.createBiquadFilter();
+        filt.type = 'lowpass';
+        filt.frequency.setValueAtTime(800, now);
+        filt.frequency.linearRampToValueAtTime(150, now + duration);
+        filt.Q.value = 0.8;
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(vol, now + 0.03);
+        gain.gain.exponentialRampToValueAtTime(vol * 0.4, now + duration * 0.4);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+        src.connect(filt); filt.connect(gain); gain.connect(audioCtx.destination);
+        src.start(now); src.stop(now + duration);
+        activeNodes.push(src);
+        setTimeout(() => { activeNodes = activeNodes.filter(n => n !== src); }, (duration + 0.5) * 1000);
+
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(80, now);
+        osc.frequency.exponentialRampToValueAtTime(30, now + duration * 0.6);
+        const g2 = audioCtx.createGain();
+        g2.gain.setValueAtTime(0.0001, now);
+        g2.gain.exponentialRampToValueAtTime(vol * 1.2, now + 0.04);
+        g2.gain.exponentialRampToValueAtTime(0.0001, now + duration * 0.8);
+        osc.connect(g2); g2.connect(audioCtx.destination);
+        osc.start(now); osc.stop(now + duration);
+        activeNodes.push(osc);
+        setTimeout(() => { activeNodes = activeNodes.filter(n => n !== osc); }, (duration + 0.5) * 1000);
+    } catch(e) {}
+}
+
+// ===================== المباني =====================
+const buildings = [];
+function initBuildings() {
+    buildings.length = 0;
+    for (let i = 0; i < 25; i++) {
+        const bx = i * 55 - 30;
+        const bw = 45 + Math.random() * 25;
+        const bh = 60 + Math.random() * 40;
+        buildings.push({ x: bx, w: bw, h: bh, layer: 'back', color: '#2a2a32', damaged: false });
+    }
+    for (let i = 0; i < 20; i++) {
+        const bx = i * 70 - 20;
+        const bw = 65 + Math.random() * 20;
+        const bh = 110 + Math.random() * 60;
+        buildings.push({ x: bx, w: bw, h: bh, layer: 'front', color: '#3a3a42', damaged: false });
+    }
+}
+initBuildings();
+
+function drawBuildings() {
+    buildings.filter(b => b.layer === 'back').forEach(b => drawBuilding(b, 0.5));
+    buildings.filter(b => b.layer === 'front').forEach(b => drawBuilding(b, 1));
+}
+
+function drawBuilding(b, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const baseY = GROUND_Y;
+    const topY = baseY - b.h;
+
+    ctx.fillStyle = b.color;
+    ctx.fillRect(b.x, topY, b.w, b.h);
+
+    ctx.strokeStyle = '#1a1a20';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(b.x, topY, b.w, b.h);
+
+    ctx.fillStyle = '#2a2a30';
+    ctx.fillRect(b.x - 2, topY - 4, b.w + 4, 5);
+
+    const floors = Math.floor(b.h / 21);
+    const cols = Math.floor(b.w / 13);
+    for (let fy = 0; fy < floors; fy++) {
+        for (let fx = 0; fx < cols; fx++) {
+            const wx = b.x + 6 + fx * 13;
+            const wy = topY + 9 + fy * 21;
+            if (wx + 7 > b.x + b.w - 4) continue;
+            const lit = ((fx + fy + Math.floor(b.x)) % 7 === 0);
+            ctx.fillStyle = lit ? '#5a5a30' : '#0a0a12';
+            ctx.fillRect(wx, wy, 7, 9);
+            ctx.strokeStyle = '#1a1a20';
+            ctx.lineWidth = 0.6;
+            ctx.strokeRect(wx, wy, 7, 9);
+        }
+    }
+
+    if (b.layer === 'front' && (Math.floor(b.x) % 3 === 0)) {
+        ctx.fillStyle = '#2a2a32';
+        ctx.fillRect(b.x + b.w * 0.3, topY - 12, 9, 10);
+        ctx.strokeStyle = '#0a0a12';
+        ctx.lineWidth = 0.6;
+        ctx.strokeRect(b.x + b.w * 0.3, topY - 12, 9, 10);
+    }
+
+    if (b.damaged) {
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(b.x + b.w * 0.4, topY + 10);
+        ctx.lineTo(b.x + b.w * 0.5, topY + b.h * 0.5);
+        ctx.lineTo(b.x + b.w * 0.3, baseY - 10);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+// ===================== الطائرة الحربية =====================
+function drawFighterJet(cx, cy, scale, alpha, flip) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.scale(flip ? -scale : scale, scale);
+
+    ctx.fillStyle = '#3a3a42';
+    ctx.strokeStyle = '#1a1a1e';
+    ctx.lineWidth = 2;
+
+    ctx.beginPath();
+    ctx.moveTo(-55, 0);
+    ctx.lineTo(-40, -6);
+    ctx.lineTo(15, -8);
+    ctx.lineTo(45, -4);
+    ctx.lineTo(65, 0);
+    ctx.lineTo(45, 4);
+    ctx.lineTo(15, 8);
+    ctx.lineTo(-40, 6);
+    ctx.lineTo(-55, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#0a0a12';
+    ctx.beginPath();
+    ctx.moveTo(20, -6);
+    ctx.lineTo(35, -5);
+    ctx.lineTo(38, 0);
+    ctx.lineTo(35, 5);
+    ctx.lineTo(20, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#0a0a12';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = '#2a2a32';
+    ctx.strokeStyle = '#1a1a1e';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -2);
+    ctx.lineTo(15, -22);
+    ctx.lineTo(22, -22);
+    ctx.lineTo(12, -2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(-5, 2);
+    ctx.lineTo(-15, 22);
+    ctx.lineTo(-8, 22);
+    ctx.lineTo(2, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(-48, -2);
+    ctx.lineTo(-55, -20);
+    ctx.lineTo(-48, -20);
+    ctx.lineTo(-42, -2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(-45, 0);
+    ctx.lineTo(-55, 8);
+    ctx.lineTo(-48, 9);
+    ctx.lineTo(-42, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#1a1a1e';
+    ctx.beginPath();
+    ctx.ellipse(-53, 0, 4, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const flameLen = 12 + Math.sin(Date.now() / 60) * 4;
+    const flameGrad = ctx.createLinearGradient(-53, 0, -53 - flameLen, 0);
+    flameGrad.addColorStop(0, 'rgba(255, 200, 80, 0.9)');
+    flameGrad.addColorStop(0.5, 'rgba(255, 120, 30, 0.6)');
+    flameGrad.addColorStop(1, 'rgba(255, 80, 20, 0)');
+    ctx.fillStyle = flameGrad;
+    ctx.beginPath();
+    ctx.moveTo(-53, -3);
+    ctx.lineTo(-53 - flameLen, 0);
+    ctx.lineTo(-53, 3);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+}
+
+// ===================== الطائرات =====================
+const planes = [];
+function initPlanes() {
+    planes.length = 0;
+    for (let i = 0; i < 5; i++) {
+        planes.push({
+            x: W + 100 + i * 180,
+            y: 80 + i * 35 + Math.random() * 20,
+            speed: 2.5 + Math.random() * 0.8,
+            scale: 0.85 + Math.random() * 0.3,
+            nextBombTime: 800 + i * 300 + Math.random() * 500,
+            bombCooldown: 900 + Math.random() * 600,
+            passed: false
+        });
+    }
+}
+
+function updatePlanes(dt) {
+    planes.forEach(p => {
+        if (p.passed) return;
+        p.x -= p.speed;
+        p.nextBombTime -= dt;
+        if (p.nextBombTime <= 0 && p.x > -100 && p.x < W + 100) {
+            spawnBomb(p.x - 5, p.y + 8);
+            p.nextBombTime = p.bombCooldown + Math.random() * 400;
+        }
+        if (p.x < -150) p.passed = true;
+    });
+}
+
+function drawPlanes() {
+    planes.forEach(p => {
+        if (p.passed) return;
+        drawFighterJet(p.x, p.y, p.scale, 1, true);
+    });
+}
+
+// ===================== القنابل =====================
+const bombs = [];
+function spawnBomb(x, y) {
+    bombs.push({ x: x, y: y, vx: -0.5 - Math.random() * 0.5, vy: 3 + Math.random() * 2, rot: 0 });
+}
+
+function updateBombs() {
+    for (let i = bombs.length - 1; i >= 0; i--) {
+        const b = bombs[i];
+        b.x += b.vx;
+        b.y += b.vy;
+        b.vy += 0.08;
+        b.rot = Math.atan2(b.vy, b.vx) - Math.PI / 2;
+
+        if (b.y >= GROUND_Y - 5) {
+            spawnExplosion(b.x, GROUND_Y - 5, 1);
+            const hitBuilding = buildings.find(bb =>
+                bb.layer === 'front' && b.x >= bb.x && b.x <= bb.x + bb.w && Math.random() < 0.5
+            );
+            if (hitBuilding) hitBuilding.damaged = true;
+            bombs.splice(i, 1);
+            continue;
+        }
+        let hitRoof = false;
+        for (let bb of buildings) {
+            if (bb.layer !== 'front') continue;
+            const topY = GROUND_Y - bb.h;
+            if (b.x >= bb.x && b.x <= bb.x + bb.w && b.y >= topY - 8 && b.y <= topY + 15) {
+                spawnExplosion(b.x, topY, 1);
+                bb.damaged = true;
+                bombs.splice(i, 1);
+                hitRoof = true;
+                break;
+            }
+        }
+        if (hitRoof) continue;
+    }
+}
+
+function drawBombs() {
+    bombs.forEach(b => {
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.rotate(b.rot);
+        ctx.fillStyle = '#1a1a1e';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 4, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#2a2a30';
+        ctx.beginPath();
+        ctx.moveTo(-4, -6);
+        ctx.lineTo(0, -12);
+        ctx.lineTo(4, -6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillRect(-5, 7, 3, 5);
+        ctx.fillRect(2, 7, 3, 5);
+        ctx.restore();
+    });
+}
+
+// ===================== الانفجارات =====================
+const explosions = [];
+function spawnExplosion(x, y, intensity) {
+    playExplosion(intensity);
+    explosions.push({ type: 'flash', x, y, radius: 5, maxRadius: 80 + Math.random() * 40, alpha: 1 });
+    for (let i = 0; i < 3; i++) {
+        explosions.push({
+            type: 'smoke',
+            x: x + (Math.random() - 0.5) * 20,
+            y: y + (Math.random() - 0.5) * 20,
+            radius: 15 + Math.random() * 15,
+            maxRadius: 50 + Math.random() * 40,
+            alpha: 0.7, vy: -0.5 - Math.random() * 0.5
+        });
+    }
+    for (let i = 0; i < 12; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const sp = 2 + Math.random() * 4;
+        explosions.push({
+            type: 'spark', x, y,
+            vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 2,
+            alpha: 1, size: 1.5 + Math.random() * 1.5
+        });
+    }
+    for (let i = 0; i < 5; i++) {
+        const ang = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
+        const sp = 3 + Math.random() * 4;
+        explosions.push({
+            type: 'debris', x, y,
+            vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 2,
+            rot: Math.random() * Math.PI, rotSpeed: (Math.random() - 0.5) * 0.3,
+            size: 3 + Math.random() * 4, alpha: 1
+        });
+    }
+}
+
+function updateExplosions() {
+    for (let i = explosions.length - 1; i >= 0; i--) {
+        const e = explosions[i];
+        if (e.type === 'flash') {
+            e.radius += (e.maxRadius - e.radius) * 0.15;
+            e.alpha -= 0.08;
+            if (e.alpha <= 0) explosions.splice(i, 1);
+        } else if (e.type === 'smoke') {
+            e.radius += (e.maxRadius - e.radius) * 0.04;
+            e.y += e.vy;
+            e.vy *= 0.98;
+            e.alpha -= 0.012;
+            if (e.alpha <= 0) explosions.splice(i, 1);
+        } else if (e.type === 'spark') {
+            e.x += e.vx; e.y += e.vy;
+            e.vy += 0.15; e.vx *= 0.98;
+            e.alpha -= 0.025;
+            if (e.alpha <= 0 || e.y > GROUND_Y + 20) explosions.splice(i, 1);
+        } else if (e.type === 'debris') {
+            e.x += e.vx; e.y += e.vy;
+            e.vy += 0.2; e.vx *= 0.99;
+            e.rot += e.rotSpeed;
+            e.alpha -= 0.015;
+            if (e.alpha <= 0 || e.y > GROUND_Y + 20) explosions.splice(i, 1);
+        }
+    }
+}
+
+function drawExplosions() {
+    explosions.forEach(e => {
+        if (e.type === 'flash') {
+            const grad = ctx.createRadialGradient(e.x, e.y, 1, e.x, e.y, e.radius);
+            grad.addColorStop(0, `rgba(255, 255, 220, ${e.alpha})`);
+            grad.addColorStop(0.3, `rgba(255, 200, 80, ${e.alpha * 0.9})`);
+            grad.addColorStop(0.7, `rgba(255, 120, 30, ${e.alpha * 0.5})`);
+            grad.addColorStop(1, 'rgba(255, 80, 20, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (e.type === 'smoke') {
+            const grad = ctx.createRadialGradient(e.x, e.y, 1, e.x, e.y, e.radius);
+            grad.addColorStop(0, `rgba(80, 70, 65, ${e.alpha * 0.6})`);
+            grad.addColorStop(0.6, `rgba(50, 45, 40, ${e.alpha * 0.4})`);
+            grad.addColorStop(1, 'rgba(30, 25, 20, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (e.type === 'spark') {
+            ctx.fillStyle = `rgba(255, 200, 80, ${e.alpha})`;
+            ctx.shadowColor = 'rgba(255, 150, 40, 0.8)';
+            ctx.shadowBlur = 6;
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        } else if (e.type === 'debris') {
+            ctx.save();
+            ctx.globalAlpha = e.alpha;
+            ctx.translate(e.x, e.y);
+            ctx.rotate(e.rot);
+            ctx.fillStyle = '#2a2a30';
+            ctx.fillRect(-e.size/2, -e.size/2, e.size, e.size);
+            ctx.restore();
+        }
+    });
+}
+
+// ===================== الأرض =====================
+const groundDebris = [];
+function initGroundDebris() {
+    groundDebris.length = 0;
+    for (let i = 0; i < 40; i++) {
+        groundDebris.push({
+            x: Math.random() * W,
+            y: GROUND_Y + 5 + Math.random() * 80,
+            size: 2 + Math.random() * 5,
+            color: ['#3a3a42', '#2a2a30', '#4a4a52'][Math.floor(Math.random() * 3)]
+        });
+    }
+}
+initGroundDebris();
+
+function drawGround() {
+    const grad = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+    grad.addColorStop(0, '#2a2622');
+    grad.addColorStop(0.5, '#1a1612');
+    grad.addColorStop(1, '#0a0602');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+    ctx.strokeStyle = 'rgba(80, 70, 60, 0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y);
+    ctx.lineTo(W, GROUND_Y);
+    ctx.stroke();
+
+    groundDebris.forEach(d => {
+        ctx.fillStyle = d.color;
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+function drawBurntTree(cx, baseY, scale) {
+    ctx.save();
+    ctx.translate(cx, baseY);
+    ctx.scale(scale, scale);
+    ctx.strokeStyle = '#0a0806';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(3, -60);
+    ctx.stroke();
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(1, -45); ctx.quadraticCurveTo(-25, -70, -40, -95);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(2, -55); ctx.quadraticCurveTo(28, -80, 38, -105);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(3, -60); ctx.quadraticCurveTo(5, -90, -8, -115);
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    const branches = [
+        [-40, -95, -55, -105], [-40, -95, -48, -115],
+        [38, -105, 55, -115], [38, -105, 45, -125],
+        [-8, -115, -18, -135], [-8, -115, 5, -140]
+    ];
+    branches.forEach(([x1, y1, x2, y2]) => {
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+    });
+    ctx.restore();
+}
+
+// ===================== الدخان في السماء =====================
+const skySmoke = [];
+function initSkySmoke() {
+    skySmoke.length = 0;
+    for (let i = 0; i < 12; i++) {
+        skySmoke.push({
+            x: Math.random() * W,
+            y: 50 + Math.random() * 200,
+            radius: 40 + Math.random() * 60,
+            alpha: 0.08 + Math.random() * 0.1,
+            vy: -0.1 - Math.random() * 0.2,
+            vx: (Math.random() - 0.5) * 0.3
+        });
+    }
+}
+initSkySmoke();
+
+function updateSkySmoke() {
+    skySmoke.forEach(s => {
+        s.x += s.vx;
+        s.y += s.vy;
+        s.alpha -= 0.0008;
+        if (s.alpha <= 0 || s.y < -s.radius) {
+            s.x = Math.random() * W;
+            s.y = H * 0.5 + Math.random() * 100;
+            s.alpha = 0.08 + Math.random() * 0.1;
+        }
+    });
+}
+
+function drawSkySmoke() {
+    skySmoke.forEach(s => {
+        const grad = ctx.createRadialGradient(s.x, s.y, 1, s.x, s.y, s.radius);
+        grad.addColorStop(0, `rgba(40, 35, 30, ${s.alpha})`);
+        grad.addColorStop(1, 'rgba(40, 35, 30, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+// ===================== السماء =====================
+function drawSky() {
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+    skyGrad.addColorStop(0, '#0a0a12');
+    skyGrad.addColorStop(0.4, '#15151f');
+    skyGrad.addColorStop(0.7, '#2a2a2e');
+    skyGrad.addColorStop(1, '#3a2a22');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, GROUND_Y);
+
+    const fireGlow = ctx.createRadialGradient(W/2, GROUND_Y, 50, W/2, GROUND_Y, 500);
+    fireGlow.addColorStop(0, 'rgba(180, 60, 20, 0.15)');
+    fireGlow.addColorStop(1, 'rgba(180, 60, 20, 0)');
+    ctx.fillStyle = fireGlow;
+    ctx.fillRect(0, 0, W, GROUND_Y);
+}
+
+// ===================== حلقة الرسم =====================
+let lastFrameTime = Date.now();
+let dronesStarted = false;
+let sceneStart = 0;
+let sceneTime = 0;
+let fadeOutAlpha = 0;
+let strikeBegan = false;
+
+function draw() {
+    const now = Date.now();
+    const dt = now - lastFrameTime;
+    lastFrameTime = now;
+
+    if (phase === 'welcome' || phase === 'end') {
+        ctx.clearRect(0, 0, W, H);
+        drawWelcomeScreen();
+
+        if (phase === 'welcome' && iconState === 'exiting') {
+            if (now - iconActionStart >= iconExitDuration) {
+                iconState = 'done';
+                initAudio();
+                resumeAudio();
+                initPlanes();
+                bombs.length = 0;
+                explosions.length = 0;
+                fadeOutAlpha = 0;
+                strikeBegan = false;
+                dronesStarted = false;
+                sceneStart = Date.now();
+                sceneTime = 0;
+                phase = 'strike';
+                lastFrameTime = Date.now();
+            }
+        }
+
+        if (phase === 'end' && iconState === 'fading') {
+            if (now - iconActionStart >= iconFadeDuration) {
+                iconState = 'done';
+            }
+        }
+    }
+    else if (phase === 'strike') {
+        sceneTime = now - sceneStart;
+
+        if (!dronesStarted && isAudioActive) {
+            dronesStarted = true;
+            playPlaneDrone(0);
+            playPlaneDrone(0.3);
+            playPlaneDrone(0.6);
+        }
+
+        const bombActive = sceneTime < 9000;
+
+        if (sceneTime > 9500) {
+            fadeOutAlpha = Math.min(1, (sceneTime - 9500) / 1000);
+        }
+
+        ctx.clearRect(0, 0, W, H);
+
+        drawSky();
+        updateSkySmoke();
+        drawSkySmoke();
+        drawBuildings();
+        drawBurntTree(120, GROUND_Y, 1.2);
+        drawBurntTree(W - 180, GROUND_Y, 1.0);
+        drawBurntTree(W/2 + 80, GROUND_Y, 0.8);
+        drawGround();
+
+        if (bombActive) {
+            updatePlanes(dt);
+            drawPlanes();
+            updateBombs();
+            drawBombs();
+        } else {
+            updatePlanes(dt);
+            drawPlanes();
+            updateBombs();
+            drawBombs();
+        }
+
+        updateExplosions();
+        drawExplosions();
+
+        if (fadeOutAlpha > 0) {
+            ctx.fillStyle = `rgba(0, 0, 0, ${fadeOutAlpha})`;
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        if (fadeOutAlpha >= 1 && !strikeBegan) {
+            strikeBegan = true;
+            activeNodes.forEach(node => { try { node.stop(); } catch(e) {} });
+            activeNodes = [];
+            if (audioCtx && audioCtx.state === 'running') {
+                try { audioCtx.suspend(); } catch(e) {}
+            }
+            phase = 'end';
+            welcomeStart = Date.now();
+            iconState = 'idle';
+        }
+    }
+
+    // ===================== نهاية المقدمة: fade to black → game.html =====================
+    if (gameFadeActive && !gameRedirected) {
+        const p = Math.min(1, (Date.now() - gameFadeStart) / GAME_FADE_DURATION);
+        gameFadeAlpha = p;
+        if (gameFadeAlpha > 0) {
+            ctx.fillStyle = `rgba(0, 0, 0, ${gameFadeAlpha})`;
+            ctx.fillRect(0, 0, W, H);
+        }
+        if (p >= 1) {
+            gameRedirected = true;
+            window.location.href = 'game.html';
+        }
+    }
+
+    requestAnimationFrame(draw);
+}
+
+welcomeStart = Date.now();
+iconState = 'idle';
+
+// ننتظر تحميل Font Awesome
+if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+        requestAnimationFrame(draw);
+    });
+} else {
+    setTimeout(() => requestAnimationFrame(draw), 800);
+}
+
+// ===================== التفاعل =====================
+function handleClick() {
+    if (iconState !== 'idle') return;
+    if (phase === 'welcome') {
+        iconState = 'exiting';
+        iconActionStart = Date.now();
+    } else if (phase === 'end') {
+        iconState = 'fading';
+        iconActionStart = Date.now();
+        // بدء fade to black (متزامن مع fade الغصن)
+        gameFadeActive = true;
+        gameFadeStart = Date.now();
+    }
+}
+
+canvas.addEventListener('click', handleClick);
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    handleClick();
+}, { passive: false });
+</script>
+</body>
+</html>
